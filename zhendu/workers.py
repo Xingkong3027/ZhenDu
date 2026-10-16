@@ -37,6 +37,8 @@ class Task:
     source: str
     config: JobConfig
     output_root: str = ""
+    task_subfolders: bool = False
+    history_root: str = ""
 
 
 class TaskWorker(QThread):
@@ -68,7 +70,8 @@ class TaskWorker(QThread):
                 self.engine = Engine(self.cache, progress=lambda value: self.progress.emit(task.identifier, value), log=self.log.emit)
                 if self.stop_event.is_set():
                     self.engine.cancel()
-                result = self.engine.process(task.source, task.config, task.output_root or None)
+                result = self.engine.process(task.source, task.config, task.output_root or None,
+                                             task_subfolders=task.task_subfolders, history_root=task.history_root or None)
                 self.completed.emit(task.identifier, result)
             except Cancelled:
                 self.failed.emit(task.identifier, t("已取消", "Cancelled"), True)

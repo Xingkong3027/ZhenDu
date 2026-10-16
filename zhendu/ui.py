@@ -95,6 +95,17 @@ class SettingsDialog(QDialog):
         note.setWordWrap(True)
         note.setObjectName("muted")
         layout.addWidget(note)
+        output_group = QGroupBox(t("输出方式", "Output layout"))
+        output_layout = QVBoxLayout(output_group)
+        self.task_subfolders = QCheckBox(t("为每个任务创建子文件夹", "Create a subfolder for each task"))
+        self.task_subfolders.setChecked(store.data.get("task_subfolders", False))
+        output_layout.addWidget(self.task_subfolders)
+        output_note = QLabel(t("默认关闭：视频直接保存在输出目录；未选择目录时保存在原视频旁。开启后使用原来的独立任务文件夹。重名时自动编号，不覆盖源文件。",
+                               "Off by default: save videos directly in the output folder, or beside the source if no folder is selected. Enable to keep separate task folders. Existing files are never overwritten."))
+        output_note.setWordWrap(True)
+        output_note.setObjectName("muted")
+        output_layout.addWidget(output_note)
+        layout.addWidget(output_group)
         group = QGroupBox(t("资源管理器右键菜单", "File Explorer context menu"))
         group_layout = QVBoxLayout(group)
         self.shell_status = QLabel()
@@ -156,6 +167,7 @@ class SettingsDialog(QDialog):
     def apply(self):
         try:
             self.store.data["language"] = self.language_combo.currentData()
+            self.store.data["task_subfolders"] = self.task_subfolders.isChecked()
             self.store.save()
             language.selection = self.store.data["language"]
             self.shell.refresh_if_owned()
@@ -597,7 +609,7 @@ class MainWindow(QMainWindow):
         output_row = QHBoxLayout()
         output_row.addWidget(self.label("输出位置", "Output"))
         self.output_dir = QLineEdit(self.store.data.get("output_dir", ""))
-        self.bind(self.output_dir, "默认：原视频旁的“帧渡输出”文件夹", "Default: a ZhenDu output folder beside the source", "setPlaceholderText")
+        self.bind(self.output_dir, "默认：原视频所在目录（可在设置中启用任务文件夹）", "Default: beside the source (task folders optional in Settings)", "setPlaceholderText")
         output_row.addWidget(self.output_dir, 1)
         output_row.addWidget(self.button("浏览…", "Browse…", self.browse_output))
         output_row.addWidget(self.button("日志", "Log", lambda: self.log_view.setVisible(not self.log_view.isVisible())))
@@ -872,11 +884,13 @@ class MainWindow(QMainWindow):
         except Exception as error:
             error_message(self, error)
 
-    def enqueue(self, sources, config, output_root=None):
+    def enqueue(self, sources, config, output_root=None, task_subfolders=None):
         self.player.media.pause()
         for source in sources:
             task = Task(uuid.uuid4().hex, str(Path(source).resolve()), JobConfig.from_dict(asdict(config)),
-                        self.output_dir.text().strip() if output_root is None else output_root)
+                        self.output_dir.text().strip() if output_root is None else output_root,
+                        self.store.data.get("task_subfolders", False) if task_subfolders is None else task_subfolders,
+                        str(self.store.root / "tasks"))
             item = QTreeWidgetItem([Path(source).name, "", "0%"])
             item.setData(0, Qt.ItemDataRole.UserRole, task.identifier)
             item.setToolTip(0, str(source))
@@ -967,7 +981,7 @@ class MainWindow(QMainWindow):
         for job in list(self.jobs.values()):
             if job["status"] == "error":
                 task = job["task"]
-                self.enqueue([task.source], task.config, task.output_root)
+                self.enqueue([task.source], task.config, task.output_root, task.task_subfolders)
 
     def open_output(self):
         item = self.task_tree.currentItem()

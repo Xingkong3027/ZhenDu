@@ -149,7 +149,8 @@ class Store:
         self.root = Path(root) if root else config_root()
         self.path = self.root / "settings.json"
         self.load_warning = ""
-        self.data = {"schema_version": self.VERSION, "language": "auto", "output_dir": "", "presets": [], "last_config": {}}
+        self.data = {"schema_version": self.VERSION, "language": "auto", "output_dir": "", "task_subfolders": False,
+                     "presets": [], "last_config": {}}
         if self.path.exists():
             try:
                 loaded = json.loads(self.path.read_text(encoding="utf-8"))
@@ -176,6 +177,8 @@ class Store:
                  "settings": {"compress": False, "split": True, "split_mode": "size", "split_size_mb": 100.0, "size_safe": False}}]
         if self.data.get("language") not in {"auto", "zh_CN", "en"}:
             self.data["language"] = "auto"
+        if type(self.data.get("task_subfolders")) is not bool:
+            self.data["task_subfolders"] = False
 
     @staticmethod
     def validate_preset(preset):

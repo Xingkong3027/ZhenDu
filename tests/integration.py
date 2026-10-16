@@ -47,7 +47,7 @@ source_packets = packets(source)
 def check(name, config, source_path=source, assertion=None):
     began = time.monotonic()
     engine = Engine()
-    result = engine.process(source_path, config, root / "outputs")
+    result = engine.process(source_path, config, root / "outputs", task_subfolders=True)
     infos = [probe(path) for path in result.outputs]
     if assertion:
         assertion(result, infos)
@@ -90,11 +90,11 @@ try:
     cancelled = Engine()
     cancelled.progress = lambda data: cancelled.cancel() if data["fraction"] > 0.01 else None
     try:
-        cancelled.process(source, JobConfig(compress=True, speed="veryslow"), root / "cancelled")
+        cancelled.process(source, JobConfig(compress=True, speed="veryslow"), root / "cancelled", history_root=root / "history")
         raise AssertionError("Cancellation did not stop processing")
     except Cancelled:
-        assert not list((root / "cancelled").glob("*/.working"))
-        assert not list((root / "cancelled").glob("*/*.mp4"))
+        assert not list((root / "cancelled").rglob(".zhendu-*"))
+        assert not list((root / "cancelled").rglob("*.mp4"))
     report["cases"].append({"name": "cancel_and_cleanup", "ok": True})
     assert hashlib.sha256(source.read_bytes()).hexdigest() == source_hash
     report["source_unchanged"] = True

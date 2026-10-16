@@ -47,17 +47,19 @@ Python is not required. Keep `_internal`, `ffmpeg` and the license files beside 
 
 The target is **64-bit Windows 10/11**. Local desktop validation used Windows 10 22H2. Hardware encoding needs compatible hardware and drivers. There is currently no installer, automatic updater, digital signature, or macOS/Linux release.
 
-Compare downloads with `SHA256SUMS.txt` on the release page. In PowerShell: `Get-FileHash .\ZhenDu-2.0.0-windows-x64-portable.zip -Algorithm SHA256`.
+Compare downloads with `SHA256SUMS.txt` on the release page. In PowerShell: `Get-FileHash .\ZhenDu-2.0.1-windows-x64-portable.zip -Algorithm SHA256`.
 
 ## Quick start
 
 1. **Add sources:** use the left list or drop files into the window. Check videos to process and select any source to preview it.
 2. **Choose operations:** configure compression, trimming and splitting on the right. Switches are independent; disable video encoding for stream copy.
 3. **Set the range:** enter A/B start and end times for trimming; select count, duration or size for splitting.
-4. **Choose output:** the directory and start/cancel buttons stay at the bottom. An empty directory uses `帧渡输出` beside the source.
+4. **Choose output:** the directory and start/cancel buttons stay at the bottom. Videos are saved directly by default; an empty directory saves beside the source.
 5. **Start:** follow the queue and expand the log for details. A failed task does not block later tasks.
 
-Each task gets a separate output subfolder and does not overwrite the source. Successful tasks include `task.json` with settings, outputs and executed arguments; failures keep `task.failed.json` for diagnosis. Cancellation cleans up outputs still being generated.
+**Create a subfolder for each task** in Settings is **off by default**. Videos go straight into the selected directory, or beside the source if none is selected. No extra output folder or JSON file is left there. For example, `video.mp4` produces `video_ZhenDu.mp4`; existing names receive a numeric suffix and are never overwritten. Splitting produces multiple numbered videos directly.
+
+Enable the setting to retain the previous layout: separate task subfolders, under `帧渡输出` beside the source when no directory is selected. Successful/failed task records use `task.json`/`task.failed.json` inside those folders. With the setting off, records live under `tasks` in the application settings directory instead. Cancelled or failed jobs clean up their own temporary outputs. Queued jobs retain the output mode selected when they were added.
 
 ## Preview and shortcuts
 

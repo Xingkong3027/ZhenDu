@@ -2,16 +2,18 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 import json
 import math
+import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 import time
 import uuid
 
 from .config import JobConfig, atomic_json, safe_name
 from .language import UserError, t
 from .media import ProbeCache, number, probe, video_span
-from .paths import media_binary
+from .paths import config_root, media_binary
 from .process import Runner
 
 
@@ -22,6 +24,24 @@ class Result:
     elapsed: float
     input_size: int
     output_size: int
+    manifest: str = ""
+
+
+def publish_file(source, directory, name):
+    """Publish without replacing existing files, including competing writers."""
+    desired = Path(name)
+    index = 1
+    while True:
+        target = directory / (desired.name if index == 1 else f"{desired.stem}_{index}{desired.suffix}")
+        try:
+            if os.name == "nt":
+                source.rename(target)  # Windows rename fails if the destination exists.
+            else:
+                os.link(source, target)
+                source.unlink()
+            return target
+        except FileExistsError:
+            index += 1
 
 
 def encoder_for(config, available=None):
@@ -307,23 +327,27 @@ class Engine:
                 raise UserError("分段数超过 9999，请提高目标大小。", "More than 9999 parts; increase the target size.")
         return outputs
 
-    def process(self, source, config, output_root=None):
+    def process(self, source, config, output_root=None, *, task_subfolders=False, history_root=None):
         config = JobConfig.from_dict(asdict(config))
         source = Path(source).resolve()
         info = self.cache.get(source, self.runner)
         start, end = config.bounds(info.duration)
         extension = output_extension(config, source)
         self.preflight(config, info, extension)
-        root = Path(output_root).resolve() if output_root else source.parent / "帧渡输出"
+        root = Path(output_root).resolve() if output_root else source.parent / "帧渡输出" if task_subfolders else source.parent
         root.mkdir(parents=True, exist_ok=True)
         if shutil.disk_usage(root).free < 100 * 1024**2:
             raise UserError("输出磁盘可用空间不足 100 MiB。", "The output disk has less than 100 MiB free.")
-        directory = root / (safe_name(source.stem) + "_" + datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:6])
-        directory.mkdir()
-        stage_dir = directory / ".working"
-        stage_dir.mkdir()
+        task_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex
+        directory = root / (safe_name(source.stem) + "_" + task_id[:22]) if task_subfolders else root
+        if task_subfolders:
+            directory.mkdir()
+        stage_dir = Path(tempfile.mkdtemp(prefix=".zhendu-", dir=directory))
+        history = directory if task_subfolders else Path(history_root) if history_root else config_root() / "tasks"
+        manifest = history / ("task.json" if task_subfolders else task_id + ".json")
         started = time.monotonic()
         self.commands = []
+        published = []
         try:
             if config.split and config.split_mode == "size":
                 outputs = self.size_encode(source, config, info, stage_dir, extension, start, end - start) if config.compress else self.size_copy(source, config, info, stage_dir, extension, start, end - start)
@@ -340,20 +364,30 @@ class Engine:
                 verified.append({"file": output.name, "duration": output_info.duration, "size": output_info.size,
                                  "video_codec": output_info.video_codec, "audio_tracks": len(output_info.audio)})
             self.runner.check()
-            published = []
-            for output in outputs:
-                final = directory / output.name
-                output.replace(final)
+            for output, details in zip(outputs, verified):
+                stem = safe_name(source.stem)
+                name = output.name if task_subfolders else stem + "_ZhenDu" + output.name[len(stem):]
+                final = publish_file(output, directory, name)
+                details["file"] = final.name
                 published.append(str(final))
             elapsed = time.monotonic() - started
-            atomic_json(directory / "task.json", {"app": "ZhenDu", "input": str(source), "settings": asdict(config),
-                                                 "requested_range": [start, end], "outputs": verified,
-                                                 "elapsed_seconds": elapsed, "commands": self.commands})
-            self.progress({"fraction": 1.0, "stage": t("完成", "Complete")})
-            return Result(str(directory), published, elapsed, info.size, sum(Path(path).stat().st_size for path in published))
-        except Exception as error:
+            record = {"app": "ZhenDu", "input": str(source), "settings": asdict(config), "task_subfolders": task_subfolders,
+                      "output_directory": str(directory), "requested_range": [start, end], "outputs": verified,
+                      "elapsed_seconds": elapsed, "commands": self.commands}
             try:
-                atomic_json(directory / "task.failed.json", {"input": str(source), "settings": asdict(config), "error": str(error), "commands": self.commands})
+                atomic_json(manifest, record)
+            except OSError as error:
+                # Completed videos remain successful even if history cannot be saved.
+                self.log(t("视频已保存，但无法写入任务记录：{error}", "Videos saved, but task history could not be written: {error}", error=error))
+            self.progress({"fraction": 1.0, "stage": t("完成", "Complete")})
+            return Result(str(directory), published, elapsed, info.size, sum(Path(path).stat().st_size for path in published), str(manifest))
+        except Exception as error:
+            for path in published:
+                Path(path).unlink(missing_ok=True)
+            try:
+                failed = history / ("task.failed.json" if task_subfolders else task_id + ".failed.json")
+                atomic_json(failed, {"input": str(source), "settings": asdict(config), "output_directory": str(directory),
+                                     "task_subfolders": task_subfolders, "error": str(error), "commands": self.commands})
             except OSError:
                 pass
             raise

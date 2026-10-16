@@ -51,8 +51,12 @@ jobs:
         run: python -B -m tests.edge_integration work/edge 'work/integration/media/测试 视频 18秒.mp4'
       - name: Build Windows GUI distribution
         run: python tools/build.py
+      - name: Check output setting and queued Explorer tasks
+        run: python -B -m tests.ui_smoke work/ui 'work/integration/media/短片 4秒.mp4'
       - name: Test actual packaged jobs and repeated launches
         run: python -B -m tests.frozen_jobs dist/ZhenDu/ZhenDu.exe work/frozen-jobs 'work/integration/media/短片 4秒.mp4'
+      - name: Test packaged task-subfolder mode
+        run: python -B -m tests.frozen_jobs dist/ZhenDu/ZhenDu.exe work/frozen-folders 'work/integration/media/短片 4秒.mp4' --task-subfolders
       - name: Archive exact source and tested distribution
         run: python tools/make_release.py
       - name: Verify packaged release assets
@@ -76,6 +80,8 @@ jobs:
             work/edge/edge-report.json
             work/frozen-jobs/frozen-jobs.json
             work/frozen-jobs/process.log
+            work/frozen-folders/frozen-jobs.json
+            work/ui/ui-report.json
           if-no-files-found: ignore
 
   publish:

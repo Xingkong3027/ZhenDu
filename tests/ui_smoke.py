@@ -34,6 +34,12 @@ window.show()
 report = {"checks": {}}
 try:
     dialog = SettingsDialog(store, window.shell, window)
+    report["checks"]["direct_output_default"] = not dialog.task_subfolders.isChecked()
+    dialog.task_subfolders.setChecked(True)
+    dialog.apply()
+    report["checks"]["folder_setting_persists"] = Store(store.root).data["task_subfolders"] is True
+    dialog = SettingsDialog(store, window.shell, window)
+    dialog.task_subfolders.setChecked(False)
     report["checks"]["language_options"] = [dialog.language_combo.itemData(index) for index in range(3)] == ["auto", "zh_CN", "en"]
     dialog.language_combo.setCurrentIndex(dialog.language_combo.findData("en"))
     dialog.changed.connect(window.retranslate)
@@ -63,7 +69,10 @@ try:
     report["checks"]["both_ipc_tasks_complete"] = len(jobs) == 2 and all(job["status"] == "complete" for job in jobs)
     report["checks"]["clean_ab_per_request"] = all(not job["task"].config.clip and job["task"].config.clip_start == 0 for job in jobs)
     report["checks"]["preset_split_retained"] = all(job["task"].config.split and job["task"].config.split_count == 2 for job in jobs)
-    report["checks"]["output_directories_distinct"] = len({job["result"].directory for job in jobs if job["result"]}) == 2
+    outputs = [path for job in jobs if job["result"] for path in job["result"].outputs]
+    report["checks"]["direct_output_no_collisions"] = len(set(outputs)) == 4 and all(Path(path).parent == root / "processed" for path in outputs)
+    report["checks"]["only_videos_in_output"] = len(list((root / "processed").iterdir())) == 4
+    report["checks"]["output_mode_snapshotted"] = all(not job["task"].task_subfolders for job in jobs)
     report["checks"]["two_parts_per_task"] = all(job["result"] and len(job["result"].outputs) == 2 for job in jobs)
     report["jobs"] = [{"status": job["status"], "config": asdict(job["task"].config)} for job in jobs]
     report["ok"] = all(report["checks"].values())

@@ -19,6 +19,7 @@ root.mkdir(parents=True, exist_ok=True)
 store = Store(root / "config")
 store.data["language"] = "en"
 store.data["output_dir"] = str(root / "processed")
+store.data["task_subfolders"] = "--task-subfolders" in sys.argv[4:]
 preset = store.save_preset("Frozen copy and split", JobConfig(split=True, split_count=2, audio_mode="none"), context=False, include_task=True)
 environment = dict(os.environ)
 environment["ZHENDU_CONFIG_DIR"] = str(store.root)
@@ -41,7 +42,7 @@ try:
     manifests = []
     while time.monotonic() < deadline:
         assert primary.poll() is None, "Primary EXE exited unexpectedly"
-        manifests = list((root / "processed").glob("*/task.json"))
+        manifests = list((root / "processed").glob("*/task.json")) if store.data["task_subfolders"] else list((store.root / "tasks").glob("*.json"))
         if len(manifests) >= 2:
             break
         time.sleep(0.15)
@@ -50,7 +51,10 @@ try:
     report["checks"]["two_parts_each"] = len(jobs) == 2 and all(len(job["outputs"]) == 2 for job in jobs)
     report["checks"]["video_copy"] = all(all(command[command.index("-c:v") + 1] == "copy" for command in job["commands"] if "-c:v" in command) for job in jobs)
     report["checks"]["no_old_ab"] = all(not job["settings"]["clip"] and job["settings"]["clip_start"] == 0 for job in jobs)
-    outputs = [path.parent / info["file"] for path, job in zip(manifests, jobs) for info in job["outputs"]]
+    outputs = [Path(job["output_directory"]) / info["file"] for job in jobs for info in job["outputs"]]
+    report["checks"]["output_layout"] = all(path.parent.parent == root / "processed" if store.data["task_subfolders"] else path.parent == root / "processed" for path in outputs)
+    if not store.data["task_subfolders"]:
+        report["checks"]["only_videos_in_output"] = len(list((root / "processed").iterdir())) == 4
     runner = Runner()
     for output in outputs:
         assert probe(output).video_codec == "h264"

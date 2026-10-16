@@ -1,5 +1,11 @@
 # 验证范围 / Validation scope
 
+## 2.0.1 输出方式 / Output layout
+
+18 项基础／实际输出／隔离注册表测试通过。其中新增 8 项覆盖：默认同目录直接输出、选定目录只留视频、重名与源文件保护、分割直接输出、开启后的原目录结构、取消清理、发布部分失败回滚、旧设置迁移与保存，以及记录写入失败后保留成功视频。Qt 界面与两次预设任务测试验证选项默认关闭、持久保存、两种语言和直接输出无重名覆盖。
+
+18 unit/output/isolated-registry checks passed locally. Eight new tests cover direct output beside the source, clean selected directories, source/existing-file protection, split outputs, the previous folder layout, cancellation, partial-publication rollback, settings migration/persistence and preserving completed videos if history is unwritable. Qt settings and repeated preset-task checks validate the default, persistence, language behavior and collision-free direct output.
+
 ## 本机验证 / Local validation
 
 2026-10-12，Windows 10 Pro 22H2 x64，Python 3.14.5，PySide6 6.10.2，PyInstaller 6.22.3。2026-10-16 整理开源发布文档，应用逻辑保留已验证版本。

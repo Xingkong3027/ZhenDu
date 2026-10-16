@@ -31,7 +31,7 @@ def hashes(path):
     return {packet["data_hash"] for packet in json.loads(data)["packets"]}
 original_packets = hashes(source)
 for name, path, config in configs:
-    result = Engine().process(path, config, root / "outputs")
+    result = Engine().process(path, config, root / "outputs", history_root=root / "history")
     for output in result.outputs:
         info = probe(output)
         assert hashes(output) <= original_packets, "Video was re-encoded"
