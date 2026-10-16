@@ -27,7 +27,7 @@ class OutputLayoutTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        self.root = Path(self.directory.name)
+        self.root = Path(self.directory.name).resolve()
         self.source = self.root / "video.mp4"
         self.source.write_bytes(self.sample.read_bytes())
         self.original = hashlib.sha256(self.source.read_bytes()).hexdigest()

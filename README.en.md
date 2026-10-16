@@ -47,7 +47,7 @@ Python is not required. Keep `_internal`, `ffmpeg` and the license files beside 
 
 The target is **64-bit Windows 10/11**. Local desktop validation used Windows 10 22H2. Hardware encoding needs compatible hardware and drivers. There is currently no installer, automatic updater, digital signature, or macOS/Linux release.
 
-Compare downloads with `SHA256SUMS.txt` on the release page. In PowerShell: `Get-FileHash .\ZhenDu-2.0.1-windows-x64-portable.zip -Algorithm SHA256`.
+Compare downloads with `SHA256SUMS.txt` on the release page. In PowerShell: `Get-FileHash .\ZhenDu-2.0.2-windows-x64-portable.zip -Algorithm SHA256`.
 
 ## Quick start
 

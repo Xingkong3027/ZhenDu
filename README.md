@@ -47,7 +47,7 @@
 
 支持目标为 **Windows 10／11，64 位**。本机实际验证环境为 Windows 10 22H2。硬件编码需要匹配的显卡和驱动。当前没有安装包、自动升级器、数字签名或 macOS／Linux 发行版。
 
-发行页提供 `SHA256SUMS.txt`。可在 PowerShell 中运行 `Get-FileHash .\ZhenDu-2.0.1-windows-x64-portable.zip -Algorithm SHA256` 并与清单比较。
+发行页提供 `SHA256SUMS.txt`。可在 PowerShell 中运行 `Get-FileHash .\ZhenDu-2.0.2-windows-x64-portable.zip -Algorithm SHA256` 并与清单比较。
 
 ## 快速开始
 
