@@ -119,6 +119,8 @@ try:
     checks["expanded_result_readonly_marks"] = window.player.expanded is not None and not window.player.expanded.a_button.isEnabled()
     window.player.close_expanded()
     window.player.media.pause()
+    app.processEvents()
+    checks["pause_immediately_after_expanded_keeps_frame"] = window.player.surface.currentWidget() is window.player.poster and not window.player.poster.pixmap().isNull()
     for choice in ("en", "zh_CN"):
         language.selection = choice
         window.retranslate()

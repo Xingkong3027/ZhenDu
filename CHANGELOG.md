@@ -10,6 +10,7 @@
 - 任务展开输出文件列表，支持选中某个视频、Ctrl／Shift 多选、右键菜单和 Ctrl+C；父子同时选择自动去重。
 - 新增 **“打开视频”** 调用默认播放器，以及 **“预览”** 在程序内播放成品，支持声音、定位与放大。选中多个文件时可指定其中一个打开或预览。
 - 成品预览保留原素材的处理设置和截取时间；点击左侧素材即可返回。预览区域更紧凑，为结果列表留出空间。
+- 修复退出放大后立刻暂停可能出现的预览空白，保留最后一帧。
 - 新任务恢复取消按钮；文件已移动或删除时给出提示。简体中文与 English 同步更新。
 
 
@@ -21,6 +22,7 @@ ZhenDu **2.0.3** adds direct file copying, opening and previewing after processi
 - Completed tasks expand into output files. Select individual parts or Ctrl/Shift selections, use context commands or Ctrl+C. Parent/child selections are deduplicated.
 - **Open video** uses the default system player; **Preview** plays results inside ZhenDu with audio, seeking and expanded controls. Choose a specific file from multiple selections.
 - Result preview preserves source settings and trim times; click the left source list to return. A more compact preview gives output rows more space.
+- Keep the last preview frame when pausing immediately after leaving expanded view.
 - New jobs restore Cancel tasks. Moved/deleted files produce a clear message. English and Simplified Chinese are updated together.
 
 

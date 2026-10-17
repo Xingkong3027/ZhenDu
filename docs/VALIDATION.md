@@ -2,9 +2,9 @@
 
 ## 2.0.3 结果操作 / Result actions
 
-24 项 Qt 结果操作检查通过：实际生成两个任务的四个视频，核验 Windows 原生 CF_HDROP 文件列表和复制标志，覆盖全部／单个／多选去重、默认播放器调用及失败提示、成品音频缓冲与视频帧、放大预览、双语按钮、返回素材保留参数、已删除文件和再次开始／取消任务。测试恢复此前剪贴板。默认播放器调用通过拦截目标 URL 验证；没有对每种播放器或接收程序逐一粘贴实测。
+25 项 Qt 结果操作检查通过：实际生成两个任务的四个视频，核验 Windows 原生 CF_HDROP 文件列表和复制标志，覆盖全部／单个／多选去重、默认播放器调用及失败提示、成品音频缓冲与视频帧、放大预览、双语按钮、返回素材保留参数、已删除文件和再次开始／取消任务。测试恢复此前剪贴板。默认播放器调用通过拦截目标 URL 验证；没有对每种播放器或接收程序逐一粘贴实测。
 
-24 Qt result-action checks passed with four real output videos: native Windows CF_HDROP and copy effect, all/single/multiple-file selection, deduplication, default-player URL/error handling, result audio buffers/video frames, expanded view, both languages, preserved source settings, deleted files and another cancelled run. Tests restore the previous clipboard. System-player dispatch is verified by intercepting its target URL; every player and paste recipient has not been tested individually.
+25 Qt result-action checks passed with four real output videos: native Windows CF_HDROP and copy effect, all/single/multiple-file selection, deduplication, default-player URL/error handling, result audio buffers/video frames, expanded view, both languages, preserved source settings, deleted files and another cancelled run. Tests restore the previous clipboard. System-player dispatch is verified by intercepting its target URL; every player and paste recipient has not been tested individually.
 
 ## 2.0.2 输出方式 / Output layout
 

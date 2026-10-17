@@ -411,8 +411,9 @@ class Player(QWidget):
                 self.expanded.surface.setCurrentWidget(self.expanded.video)
             else:
                 self.surface.setCurrentWidget(self.video)
-        elif not self.priming and self.last_frame is not None:
-            self.frame_image = self.last_frame.toImage()
+        elif not self.priming:
+            if self.last_frame is not None:
+                self.frame_image = self.last_frame.toImage()
             self.show_poster()
         if self.expanded:
             self.expanded.sync()
