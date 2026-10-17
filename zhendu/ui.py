@@ -4,12 +4,12 @@ from pathlib import Path
 import queue
 import uuid
 
-from PySide6.QtCore import QSignalBlocker, Qt, QThreadPool, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QIcon
+from PySide6.QtCore import QMimeData, QSignalBlocker, Qt, QThreadPool, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                               QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView,
                               QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
-                              QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSpinBox,
+                              QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSpinBox,
                               QSplitter, QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from . import __version__
@@ -343,6 +343,8 @@ class MainWindow(QMainWindow):
         self.task_queue = queue.Queue()
         self.worker = None
         self.current_path = ""
+        self.previewing_result = False
+        self._source_preview_path = ""
         self.bindings = []
         self.combos = []
         self.tab_titles = []
@@ -431,6 +433,7 @@ class MainWindow(QMainWindow):
         self.file_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.file_tree.setRootIsDecorated(False)
         self.file_tree.currentItemChanged.connect(self.select_preview)
+        self.file_tree.itemClicked.connect(lambda item, _: self.select_preview(item, None))
         files_layout.addWidget(self.file_tree, 1)
         row = QHBoxLayout()
         row.addWidget(self.button("添加视频", "Add videos", self.add_dialog))
@@ -455,6 +458,7 @@ class MainWindow(QMainWindow):
         middle_layout.addWidget(self.info_label)
         self.player = Player()
         self.player.video.setMaximumHeight(300)
+        self.player.surface.setMaximumHeight(250)
         self.player.error.connect(self.append_log)
         self.player.mark_start.connect(self.set_a)
         self.player.mark_end.connect(self.set_b)
@@ -468,14 +472,29 @@ class MainWindow(QMainWindow):
         middle_layout.addLayout(queue_header)
         self.task_tree = QTreeWidget()
         self.task_tree.setColumnCount(3)
-        self.task_tree.setRootIsDecorated(False)
-        self.task_tree.setMinimumHeight(75)
-        self.task_tree.setMaximumHeight(170)
+        self.task_tree.setRootIsDecorated(True)
+        self.task_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.task_tree.setMinimumHeight(110)
+        self.task_tree.setMaximumHeight(200)
         self.task_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.task_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.task_tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.task_tree.itemDoubleClicked.connect(lambda _: self.open_output())
+        self.task_tree.itemDoubleClicked.connect(self.activate_result)
+        self.task_tree.itemSelectionChanged.connect(self.refresh_result_actions)
+        self.task_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.task_tree.customContextMenuRequested.connect(self.result_menu)
+        shortcut = QShortcut(QKeySequence.StandardKey.Copy, self.task_tree)
+        shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        shortcut.activated.connect(self.copy_selected_results)
         middle_layout.addWidget(self.task_tree, 1)
+        result_actions = QHBoxLayout()
+        self.copy_result_button = self.button("复制文件", "Copy files", self.copy_selected_results)
+        self.open_video_button = self.button("打开视频", "Open video", self.open_result)
+        self.preview_result_button = self.button("预览", "Preview", self.preview_result)
+        for button in (self.copy_result_button, self.open_video_button, self.preview_result_button):
+            result_actions.addWidget(button)
+        result_actions.addStretch()
+        middle_layout.addLayout(result_actions)
         self.splitter.addWidget(middle)
         right = QWidget()
         right_layout = QVBoxLayout(right)
@@ -625,7 +644,8 @@ class MainWindow(QMainWindow):
         progress_box.addWidget(self.progress_label)
         progress_box.addWidget(self.progress_bar)
         footer.addLayout(progress_box, 1)
-        self.cancel_button = self.button("取消任务", "Cancel tasks", self.cancel_tasks, "danger")
+        self.cancel_button = QPushButton()
+        self.cancel_button.clicked.connect(self.task_footer_action)
         self.cancel_button.setEnabled(False)
         self.start_button = self.button("开始处理", "Start processing", self.start_processing, "primary")
         footer.addWidget(self.cancel_button)
@@ -662,7 +682,8 @@ class MainWindow(QMainWindow):
         if not self.jobs:
             self.progress_label.setText(t("准备就绪 · 勾选素材后开始处理", "Ready · check sources and start processing"))
         if self.current_path:
-            self.source_title.setText(Path(self.current_path).name)
+            self.update_preview_title()
+        self.refresh_result_actions()
 
     def refresh_presets(self):
         identifier = self.preset_combo.currentData()
@@ -733,6 +754,9 @@ class MainWindow(QMainWindow):
         self.range_changed()
 
     def range_changed(self, *_):
+        if self.previewing_result:
+            self.player.update_range(0, self.player.duration)
+            return
         try:
             start = parse_time(self.clip_start.text()) if self.clip.isChecked() else 0.0
             end = parse_time(self.clip_end.text()) if self.clip.isChecked() and self.clip_end.text().strip() else self.player.duration
@@ -741,11 +765,15 @@ class MainWindow(QMainWindow):
             pass
 
     def set_a(self, seconds):
+        if self.previewing_result:
+            return
         self.clip.setChecked(True)
         self.clip_start.setText(time_text(seconds))
         self.tabs.setCurrentIndex(1)
 
     def set_b(self, seconds):
+        if self.previewing_result:
+            return
         self.clip.setChecked(True)
         self.clip_end.setText(time_text(seconds))
         self.tabs.setCurrentIndex(1)
@@ -755,6 +783,9 @@ class MainWindow(QMainWindow):
         self.clip_end.setText(time_text(self.player.duration) if self.player.duration else "")
 
     def player_loaded(self, duration):
+        if self.previewing_result:
+            self.range_changed()
+            return
         if not self.clip_end.text():
             self.clip_end.setText(time_text(duration))
         self.range_changed()
@@ -785,7 +816,7 @@ class MainWindow(QMainWindow):
             source = item.data(0, Qt.ItemDataRole.UserRole)
             self.file_tree.takeTopLevelItem(self.file_tree.indexOfTopLevelItem(item))
             self.files.pop(source, None)
-        if not self.files:
+        if not self.files and not self.previewing_result:
             self.player.clear()
             self.current_path = ""
             self.source_title.setText(t("预览", "Preview"))
@@ -795,14 +826,31 @@ class MainWindow(QMainWindow):
         if not item:
             return
         path = item.data(0, Qt.ItemDataRole.UserRole)
-        if path == self.current_path:
+        self.load_preview(path)
+
+    def update_preview_title(self):
+        name = Path(self.current_path).name
+        self.source_title.setText(t("处理结果 · {name}", "Result · {name}", name=name) if self.previewing_result else name)
+
+    def load_preview(self, path, result=False):
+        if path == self.current_path and result == self.previewing_result:
             return
+        returning_to_source = self.previewing_result and not result and path == self._source_preview_path
+        if not self.previewing_result:
+            self._source_preview_path = self.current_path
+            if result:
+                self._desired_audio_track = self.audio_track.currentData()
+        self.previewing_result = result
         self.current_path = path
-        self.source_title.setText(Path(path).name)
+        self.update_preview_title()
         self.info_label.setText(t("读取媒体信息…", "Reading media information…"))
-        self.clip_start.setText("00:00:00.000")
-        self.clip_end.clear()
+        if not result and not returning_to_source:
+            self.clip_start.setText("00:00:00.000")
+            self.clip_end.clear()
+        self.player.set_editing_enabled(not result)
         self.player.load(path)
+        if path in self.probes:
+            return
         task = ProbeTask(path, self.cache)
         task.signals.ready.connect(self.probe_ready)
         task.signals.failed.connect(self.probe_failed)
@@ -815,6 +863,8 @@ class MainWindow(QMainWindow):
         if path != self.current_path:
             return
         self.info_label.setText(f"{info.width} × {info.height}  ·  {info.fps:.3f} fps  ·  {time_text(info.duration)}  ·  {info.size / 1024**2:.1f} MiB  ·  {info.video_codec.upper()}")
+        if self.previewing_result:
+            return
         self.audio_track.clear()
         self.audio_track.addItem(t("全部音轨", "All audio tracks"), -1)
         for index, audio in enumerate(info.audio):
@@ -912,8 +962,8 @@ class MainWindow(QMainWindow):
         self.worker.failed.connect(self.job_failed)
         self.worker.log.connect(self.append_log)
         self.worker.finished.connect(self.worker_finished)
-        self.cancel_button.setEnabled(True)
         self.worker.start()
+        self.refresh_result_actions()
 
     def job_started(self, identifier, path):
         job = self.jobs[identifier]
@@ -933,7 +983,15 @@ class MainWindow(QMainWindow):
     def job_complete(self, identifier, result):
         job = self.jobs[identifier]
         job.update(status="complete", fraction=1.0, result=result)
+        for path in result.outputs:
+            child = QTreeWidgetItem([Path(path).name, "", ""])
+            child.setData(0, Qt.ItemDataRole.UserRole, identifier)
+            child.setData(0, Qt.ItemDataRole.UserRole + 1, path)
+            child.setToolTip(0, path)
+            job["item"].addChild(child)
+        job["item"].setExpanded(True)
         self.update_job_item(job)
+        self.refresh_result_actions()
         self.append_log(t("完成：{n} 个文件，{size:.2f} MiB，用时 {seconds:.1f} 秒。", "Complete: {n} files, {size:.2f} MiB, {seconds:.1f} seconds.", n=len(result.outputs), size=result.output_size / 1024**2, seconds=result.elapsed))
 
     def job_failed(self, identifier, message, cancelled=False):
@@ -941,12 +999,15 @@ class MainWindow(QMainWindow):
         job.update(status="cancelled" if cancelled else "error", fraction=1.0)
         job["item"].setToolTip(1, message)
         self.update_job_item(job)
+        self.refresh_result_actions()
         self.append_log(message)
 
     def update_job_item(self, job):
         labels = {"queued": ("排队", "Queued"), "running": ("处理中", "Running"), "complete": ("完成", "Complete"), "error": ("失败", "Failed"), "cancelled": ("已取消", "Cancelled")}
         job["item"].setText(1, t(*labels[job["status"]]))
         job["item"].setText(2, "—" if job["status"] in {"error", "cancelled"} else f"{job['fraction'] * 100:.0f}%")
+        for index in range(job["item"].childCount()):
+            job["item"].child(index).setText(1, t("输出文件", "Output file"))
 
     def worker_finished(self):
         finished = self.sender()
@@ -957,12 +1018,112 @@ class MainWindow(QMainWindow):
         if self.worker:
             self.worker.deleteLater()
             self.worker = None
-        self.cancel_button.setEnabled(False)
         successful = sum(job["status"] == "complete" for job in self.jobs.values())
         failed = sum(job["status"] == "error" for job in self.jobs.values())
         self.progress_label.setText(t("任务结束 · 完成 {done} · 失败 {failed}", "Tasks finished · complete {done} · failed {failed}", done=successful, failed=failed))
         self.progress_bar.setValue(round(sum(job["fraction"] for job in self.jobs.values()) / max(len(self.jobs), 1) * 1000))
         self.ensure_worker()
+        self.refresh_result_actions()
+
+    def result_paths(self, selected=True):
+        paths = []
+        items = self.task_tree.selectedItems() if selected else [job["item"] for job in self.jobs.values()]
+        for item in items:
+            job = self.jobs.get(item.data(0, Qt.ItemDataRole.UserRole))
+            if not job or job["status"] != "complete" or not job["result"]:
+                continue
+            output = item.data(0, Qt.ItemDataRole.UserRole + 1)
+            paths.extend([output] if output else job["result"].outputs)
+        # Parent + child selection must not copy the same file twice.
+        return list(dict.fromkeys(paths))
+
+    def refresh_result_actions(self):
+        if not hasattr(self, "cancel_button"):
+            return
+        selected = self.result_paths()
+        self.copy_result_button.setEnabled(bool(selected))
+        self.open_video_button.setEnabled(bool(selected))
+        self.preview_result_button.setEnabled(bool(selected))
+        active = self.worker is not None or not self.task_queue.empty()
+        copying = bool(self.jobs) and not active
+        self.cancel_button.setText(t("复制文件", "Copy files") if copying else t("取消任务", "Cancel tasks"))
+        self.cancel_button.setEnabled(active or bool(self.result_paths(False)))
+        object_name = "primary" if copying else "danger"
+        if self.cancel_button.objectName() != object_name:
+            self.cancel_button.setObjectName(object_name)
+            self.cancel_button.style().unpolish(self.cancel_button)
+            self.cancel_button.style().polish(self.cancel_button)
+        self.cancel_button.setToolTip(t("复制本次队列中所有已完成的视频，可直接粘贴到资源管理器。", "Copy all completed videos in this queue for pasting into File Explorer.") if copying else "")
+
+    def task_footer_action(self):
+        if self.worker is not None or not self.task_queue.empty():
+            self.cancel_tasks()
+        else:
+            self.copy_result_files(self.result_paths(False))
+
+    def copy_selected_results(self):
+        self.copy_result_files(self.result_paths())
+
+    def copy_result_files(self, paths):
+        if not paths:
+            return
+        missing = [path for path in paths if not Path(path).is_file()]
+        if missing:
+            error_message(self, UserError("文件已移动或删除，请重新选择：\n{path}", "Files were moved or deleted. Select again:\n{path}", path="\n".join(missing)))
+            return
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(Path(path).resolve())) for path in paths])
+        # Qt maps local URLs to Windows CF_HDROP. Explicitly request copy, never cut.
+        mime.setData('application/x-qt-windows-mime;value="Preferred DropEffect"', (1).to_bytes(4, "little"))
+        QApplication.clipboard().setMimeData(mime)
+        self.progress_label.setText(t("已复制 {n} 个视频文件 · 可直接粘贴", "Copied {n} video files · ready to paste", n=len(paths)))
+
+    def choose_result(self, preview=False):
+        paths = self.result_paths()
+        if not paths:
+            return None
+        if len(paths) > 1:
+            choices = [f"{index + 1}. {Path(path).name}" for index, path in enumerate(paths)]
+            choice, accepted = QInputDialog.getItem(self, t("预览", "Preview") if preview else t("打开视频", "Open video"),
+                                                    t("选择视频文件", "Choose a video file"), choices, 0, False)
+            if not accepted:
+                return None
+            path = paths[choices.index(choice)]
+        else:
+            path = paths[0]
+        if not Path(path).is_file():
+            error_message(self, UserError("文件已移动或删除：{path}", "File was moved or deleted: {path}", path=path))
+            return None
+        return path
+
+    def open_result(self):
+        if path := self.choose_result():
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path).resolve()))):
+                error_message(self, UserError("无法打开视频，请检查系统的默认视频播放器。", "Unable to open the video. Check the default video player in Windows."))
+
+    def preview_result(self):
+        if path := self.choose_result(preview=True):
+            self.load_preview(path, result=True)
+
+    def activate_result(self, item, column=0):
+        if item.data(0, Qt.ItemDataRole.UserRole + 1):
+            self.preview_result()
+
+    def result_menu(self, point):
+        item = self.task_tree.itemAt(point)
+        if not item:
+            return
+        if not item.isSelected():
+            self.task_tree.setCurrentItem(item)
+        if not self.result_paths():
+            return
+        menu = QMenu(self)
+        for chinese, english, callback in (("复制文件", "Copy files", self.copy_selected_results),
+                                           ("打开视频", "Open video", self.open_result),
+                                           ("预览", "Preview", self.preview_result),
+                                           ("打开输出", "Open output", self.open_output)):
+            menu.addAction(t(chinese, english), callback)
+        menu.exec(self.task_tree.viewport().mapToGlobal(point))
 
     def cancel_tasks(self):
         if self.worker:

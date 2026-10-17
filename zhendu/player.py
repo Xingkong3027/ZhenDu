@@ -58,8 +58,10 @@ class ExpandedPreview(QDialog):
         controls.addWidget(self.exit_button)
         layout.addLayout(controls)
         edits = QHBoxLayout()
-        edits.addWidget(self.button("当前画面设为 A", "Set A here", lambda: player.mark_start.emit(player.media.position() / 1000)))
-        edits.addWidget(self.button("当前画面设为 B", "Set B here", lambda: player.mark_end.emit(player.media.position() / 1000)))
+        self.a_button = self.button("当前画面设为 A", "Set A here", lambda: player.mark_start.emit(player.media.position() / 1000))
+        self.b_button = self.button("当前画面设为 B", "Set B here", lambda: player.mark_end.emit(player.media.position() / 1000))
+        edits.addWidget(self.a_button)
+        edits.addWidget(self.b_button)
         self.loop = QCheckBox()
         self.bindings.append((self.loop, "循环 A/B", "Loop A/B"))
         self.loop.toggled.connect(player.loop.setChecked)
@@ -124,6 +126,8 @@ class ExpandedPreview(QDialog):
         self.loop.setEnabled(player.loop.isEnabled())
         for widget in (self.slider, self.play_button):
             widget.setEnabled(player.play_button.isEnabled())
+        self.a_button.setEnabled(player.a_button.isEnabled())
+        self.b_button.setEnabled(player.b_button.isEnabled())
         if playing and not player.priming:
             self.surface.setCurrentWidget(self.video)
         elif not player.priming:
@@ -195,6 +199,7 @@ class Player(QWidget):
         self._loop_seeking = False
         self.bindings = []
         self.expanded = None
+        self.editing_enabled = True
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(9)
@@ -291,6 +296,12 @@ class Player(QWidget):
     def set_enabled(self, enabled):
         for widget in (self.slider, self.play_button, self.previous, self.next, self.a_button, self.b_button, self.fullscreen):
             widget.setEnabled(enabled)
+        self.a_button.setEnabled(enabled and self.editing_enabled)
+        self.b_button.setEnabled(enabled and self.editing_enabled)
+
+    def set_editing_enabled(self, enabled):
+        self.editing_enabled = enabled
+        self.set_enabled(self.play_button.isEnabled())
 
     def load(self, path):
         self.seek_timer.stop()

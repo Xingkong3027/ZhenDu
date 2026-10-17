@@ -53,6 +53,8 @@ jobs:
         run: python tools/build.py
       - name: Check output setting and queued Explorer tasks
         run: python -B -m tests.ui_smoke work/ui 'work/integration/media/短片 4秒.mp4'
+      - name: Check file clipboard and processed-video actions
+        run: python -B -m tests.result_actions work/results 'work/integration/media/短片 4秒.mp4'
       - name: Test actual packaged jobs and repeated launches
         run: python -B -m tests.frozen_jobs dist/ZhenDu/ZhenDu.exe work/frozen-jobs 'work/integration/media/短片 4秒.mp4'
       - name: Test packaged task-subfolder mode
@@ -82,6 +84,7 @@ jobs:
             work/frozen-jobs/process.log
             work/frozen-folders/frozen-jobs.json
             work/ui/ui-report.json
+            work/results/result-actions.json
           if-no-files-found: ignore
 
   publish:
