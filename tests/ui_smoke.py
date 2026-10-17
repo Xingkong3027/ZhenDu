@@ -54,8 +54,8 @@ try:
     name = "ZhenDu-Test-" + uuid.uuid4().hex
     server = InstanceServer(window, name)
     for index in range(2):
-        request = {"protocol": 1, "files": [source], "preset": preset["id"], "run": True}
-        sender = subprocess.Popen([sys.executable, "-B", "-c", "import json,sys; from zhendu.application import send_request; from PySide6.QtCore import QCoreApplication; app=QCoreApplication([]); sys.exit(0 if send_request(sys.argv[1],json.loads(sys.argv[2])) else 1)", name, json.dumps(request)], **hidden_process_options())
+        request = {"protocol": 1, "request_id": uuid.uuid4().hex, "files": [source], "preset": preset["id"], "run": True}
+        sender = subprocess.Popen([sys.executable, "-B", "-c", "import json,sys; from zhendu.application import send_request; from PySide6.QtCore import QCoreApplication; app=QCoreApplication([]); request=json.loads(sys.argv[2]); sys.exit(0 if all(send_request(sys.argv[1],request) for _ in range(2)) else 1)", name, json.dumps(request)], **hidden_process_options())
         deadline = time.monotonic() + 15
         while sender.poll() is None and time.monotonic() < deadline:
             QTest.qWait(50)
@@ -67,6 +67,7 @@ try:
         QTest.qWait(100)
     jobs = list(window.jobs.values())
     report["checks"]["both_ipc_tasks_complete"] = len(jobs) == 2 and all(job["status"] == "complete" for job in jobs)
+    report["checks"]["repeated_request_id_runs_once"] = len(jobs) == 2
     report["checks"]["clean_ab_per_request"] = all(not job["task"].config.clip and job["task"].config.clip_start == 0 for job in jobs)
     report["checks"]["preset_split_retained"] = all(job["task"].config.split and job["task"].config.split_count == 2 for job in jobs)
     outputs = [path for job in jobs if job["result"] for path in job["result"].outputs]

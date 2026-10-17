@@ -6,6 +6,10 @@
 
 25 Qt result-action checks passed with four real output videos: native Windows CF_HDROP and copy effect, all/single/multiple-file selection, deduplication, default-player URL/error handling, result audio buffers/video frames, expanded view, both languages, preserved source settings, deleted files and another cancelled run. Tests restore the previous clipboard. System-player dispatch is verified by intercepting its target URL; every player and paste recipient has not been tested individually.
 
+额外的 IPC 测试将同一请求各发送两次，确认两个不同请求只产生两个任务。重复启动请求带有唯一标识，避免启动超时重试重复入队。
+
+An additional IPC check sends each request twice and verifies that two distinct requests produce exactly two tasks. Startup retries retain their request identifier.
+
 ## 2.0.2 输出方式 / Output layout
 
 18 项基础／实际输出／隔离注册表测试通过。其中新增 8 项覆盖：默认同目录直接输出、选定目录只留视频、重名与源文件保护、分割直接输出、开启后的原目录结构、取消清理、发布部分失败回滚、旧设置迁移与保存，以及记录写入失败后保留成功视频。Qt 界面与两次预设任务测试验证选项默认关闭、持久保存、两种语言和直接输出无重名覆盖。

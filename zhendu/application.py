@@ -1,4 +1,5 @@
 import argparse
+from collections import OrderedDict
 from dataclasses import asdict
 import hashlib
 import json
@@ -7,6 +8,7 @@ from pathlib import Path
 import sys
 import time
 import traceback
+import uuid
 
 os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 
@@ -32,6 +34,7 @@ class InstanceServer:
         self.server = QLocalServer(window)
         self.server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
         self.connections = {}
+        self.requests = OrderedDict()
         QLocalServer.removeServer(name)
         if not self.server.listen(name):
             raise RuntimeError(self.server.errorString())
@@ -59,7 +62,21 @@ class InstanceServer:
                 request = json.loads(line)
                 if request.get("protocol") != self.PROTOCOL:
                     raise ValueError("Unsupported request version")
+                request_id = request.get("request_id")
+                if request_id is not None and (not isinstance(request_id, str) or not 1 <= len(request_id) <= 128):
+                    raise ValueError("Invalid request identifier")
+                if request_id in self.requests:
+                    socket.write(self.requests[request_id])
+                    socket.flush()
+                    continue
+                if request_id:
+                    # Reserve before dispatch: nested Qt events must not enqueue it again.
+                    self.requests[request_id] = b"ERROR\n"
+                    while len(self.requests) > 1024:
+                        self.requests.popitem(last=False)
                 handle_request(self.window, request)
+                if request_id:
+                    self.requests[request_id] = b"OK\n"
                 socket.write(b"OK\n")
                 socket.flush()
             except Exception as error:
@@ -340,7 +357,7 @@ def main(argv=None):
             return 0
         for name in ("ffmpeg.exe", "ffprobe.exe"):
             media_binary(name)
-        request = {"protocol": InstanceServer.PROTOCOL, "files": args.files, "preset": args.preset,
+        request = {"protocol": InstanceServer.PROTOCOL, "request_id": uuid.uuid4().hex, "files": args.files, "preset": args.preset,
                    "run": args.run, "manage": args.manage_presets}
         instance_key = hashlib.sha256((str(app_root()).casefold() + str(store.root).casefold()).encode("utf-8")).hexdigest()[:24]
         name = "ZhenDu-" + instance_key
