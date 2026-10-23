@@ -120,6 +120,8 @@ def handle_request(window, request):
         # A context-menu job always starts from clean defaults, never old A/B.
         config = JobConfig.from_dict(preset["settings"])
         window.apply_config(config)
+        for path in paths:
+            window.set_source_config(path, config)
         index = window.preset_combo.findData(identifier)
         if index >= 0:
             window.preset_combo.setCurrentIndex(index)

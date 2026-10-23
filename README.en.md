@@ -12,6 +12,7 @@ Preview, trim, split and compress videos in one window. Trim a range and split i
 - [Features](#features)
 - [Download and run](#download-and-run)
 - [Quick start](#quick-start)
+- [Multiple sources and synchronized settings](#multiple-sources-and-synchronized-settings)
 - [After processing](#after-processing)
 - [Preview and shortcuts](#preview-and-shortcuts)
 - [Compression, trimming and splitting](#compression-trimming-and-splitting)
@@ -28,7 +29,7 @@ Preview, trim, split and compress videos in one window. Trim a range and split i
 | Feature | Details |
 | --- | --- |
 | Batch tasks | Add or drop videos, check files to process, view queue progress and logs, cancel work and retry failures |
-| Preview with audio | Playback, volume, mute, seeking, A/B markers and looping; selecting a new source resets its trim range |
+| Preview with audio | Playback, volume, mute, seeking, A/B markers and looping; trim settings are remembered per source |
 | Expanded preview | Centered, aspect-preserving full-screen video with persistent controls and current/total time; returning preserves playback position and state |
 | Video encoding | H.264, H.265/HEVC, VP9 and AV1; CPU and supported NVIDIA NVENC, Intel QSV or AMD AMF hardware |
 | Picture settings | Quality, speed, dimensions, frame rate and color range; ignored when video encoding is disabled |
@@ -48,7 +49,7 @@ Python is not required. Keep `_internal`, `ffmpeg` and the license files beside 
 
 The target is **64-bit Windows 10/11**. Local desktop validation used Windows 10 22H2. Hardware encoding needs compatible hardware and drivers. There is currently no installer, automatic updater, digital signature, or macOS/Linux release.
 
-Compare downloads with `SHA256SUMS.txt` on the release page. In PowerShell: `Get-FileHash .\ZhenDu-2.0.3-windows-x64-portable.zip -Algorithm SHA256`.
+Compare downloads with `SHA256SUMS.txt` on the release page. In PowerShell: `Get-FileHash .\ZhenDu-2.1.0-windows-x64-portable.zip -Algorithm SHA256`.
 
 ## Quick start
 
@@ -61,6 +62,28 @@ Compare downloads with `SHA256SUMS.txt` on the release page. In PowerShell: `Get
 **Create a subfolder for each task** in Settings is **off by default**. Videos go straight into the selected directory, or beside the source if none is selected. No extra output folder or JSON file is left there. For example, `video.mp4` produces `video_ZhenDu.mp4`; existing names receive a numeric suffix and are never overwritten. Splitting produces multiple numbered videos directly.
 
 Enable the setting to retain the previous layout: separate task subfolders, under `帧渡输出` beside the source when no directory is selected. Successful/failed task records use `task.json`/`task.failed.json` inside those folders. With the setting off, records live under `tasks` in the application settings directory instead. Cancelled or failed jobs clean up their own temporary outputs. Queued jobs retain the output mode selected when they were added.
+
+## Multiple sources and synchronized settings
+
+With multiple sources, each processing tab shows its own **Sync settings** switch. **Editing** identifies the source whose settings are displayed.
+
+| Tab | Default sync | Behavior |
+| --- | --- | --- |
+| Compress | On | Share encoding, picture, audio and container settings across all sources |
+| Trim | Off | Remember each source's enable switch and A/B times separately |
+| Split | Off | Remember each source's enable switch, mode and parameters separately |
+
+Enabling synchronization copies the **current source's settings for that tab** to every source, including unchecked sources. Later edits remain synchronized. Disabling it preserves the current values for individual editing. Unfinished time text survives source switches. Sync preferences persist; source lists and their drafts remain in the current session rather than becoming cross-file presets.
+
+For example, share compression while trimming source A to 2–8 seconds and splitting it into two parts, and trimming B to 1–3 seconds without splitting. Each job receives its own range and split rule. Newly added sources inherit only synchronized settings; by default they do not inherit another source's trim/split setup. An empty B means each video's own end.
+
+Before submission, all checked sources are validated, and invalid settings identify the affected file without submitting a partial batch. Queued jobs retain their captured settings. Explorer preset commands explicitly apply that preset to all files passed in that request.
+
+**Successful sources are removed automatically**, while task results remain available for copying/opening/preview. **Failed sources remain unchecked and red**; hover or view the log for details, edit and check again, or retry with the failed job's original parameters. Cancelled sources remain unchecked. Already retried historical failures are not submitted repeatedly.
+
+Each new round starts at 0 and counts only its own jobs, including jobs appended while it is active. Historical tasks no longer make a new round start at 50%. Completion/failure/cancellation counts also refer to that round.
+
+Disabled splitting grays out its parameters and help text. Count mode shows only part count, duration mode only duration, and size mode only size plus conservative verification. Both preview timelines support clicking or dragging anywhere on the groove, preserving playback/pause state.
 
 ## After processing
 

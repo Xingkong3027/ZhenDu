@@ -1,5 +1,11 @@
 # 验证范围 / Validation scope
 
+## 2.1.0 批量体验 / Batch experience
+
+新增 6 项独立素材配置测试，覆盖默认同步、同步开关转换、新素材隔离、未完成草稿、空终点按各自时长计算、配置快照和旧设置迁移。42 项实际 Qt 检查覆盖两条不同截取／分割规则的真实视频任务、轮次进度、成功移除、失败标红与取消勾选、重试去重、深色菜单像素，以及主／放大时间轴的鼠标点击和拖动。原有结果复制、有声预览、IPC、输出和注册表检查继续运行。
+
+Six new unit checks cover source synchronization, toggling, new-source isolation, unfinished drafts, per-video end times, immutable snapshots and settings migration. 42 real Qt checks cover different trim/split jobs, fresh-round progress, success removal, unchecked red failures, retry deduplication, dark menu pixels, and actual mouse input on both preview timelines. Existing file-clipboard, audio preview, IPC, output and registry checks remain in place.
+
 ## 2.0.3 结果操作 / Result actions
 
 25 项 Qt 结果操作检查通过：实际生成两个任务的四个视频，核验 Windows 原生 CF_HDROP 文件列表和复制标志，覆盖全部／单个／多选去重、默认播放器调用及失败提示、成品音频缓冲与视频帧、放大预览、双语按钮、返回素材保留参数、已删除文件和再次开始／取消任务。测试恢复此前剪贴板。默认播放器调用通过拦截目标 URL 验证；没有对每种播放器或接收程序逐一粘贴实测。

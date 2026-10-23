@@ -5,12 +5,12 @@ import queue
 import uuid
 
 from PySide6.QtCore import QMimeData, QSignalBlocker, Qt, QThreadPool, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QIcon, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                               QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView,
                               QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
                               QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSpinBox,
-                              QSplitter, QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+                              QSplitter, QStyledItemDelegate, QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from . import __version__
 from .config import JobConfig, Store, atomic_json, parse_time, time_text
@@ -19,6 +19,7 @@ from .media import ProbeCache
 from .paths import resource_path
 from .player import Player
 from .shell import ShellIntegration
+from .source_settings import SourceSettings, config_from_draft, draft_from_config
 from .workers import ProbeTask, Task, TaskWorker
 
 
@@ -42,9 +43,15 @@ QPushButton#danger { color: #ffb0a2; }
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox { background: #111c26; border: 1px solid #334252; border-radius: 5px; padding: 6px; min-height: 19px; }
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus { border-color: #51d7b8; }
 QComboBox QAbstractItemView { background: #20303e; selection-background-color: #2d695c; }
+QMenu { background: #18222d; color: #e5edf4; border: 1px solid #41556a; padding: 5px; }
+QMenu::item { background: transparent; color: #e5edf4; padding: 8px 22px; border-radius: 4px; }
+QMenu::item:selected { background: #24594f; color: #ffffff; }
+QMenu::item:disabled { color: #718496; }
+QMenu::separator { background: #334252; height: 1px; margin: 4px 8px; }
 QTreeWidget, QListWidget, QPlainTextEdit { background: #141e28; border: 1px solid #2a3745; border-radius: 7px; alternate-background-color: #182532; }
 QTreeWidget::item, QListWidget::item { padding: 7px 5px; }
-QTreeWidget::item:selected, QListWidget::item:selected { background: #24594f; color: white; }
+QTreeWidget::item:selected, QListWidget::item:selected { background: #24594f; }
+QTreeWidget#taskResults::item:selected, QListWidget::item:selected { color: #ffffff; }
 QHeaderView::section { background: #1f2d3a; color: #a9bdcf; border: none; padding: 6px; }
 QTabWidget::pane { background: #18222d; border: 1px solid #2a3745; border-radius: 8px; }
 QTabBar::tab { background: #192633; padding: 10px 13px; color: #9fb3c5; border-bottom: 2px solid transparent; }
@@ -52,6 +59,8 @@ QTabBar::tab:selected { color: #70e3c8; border-bottom-color: #51d7b8; }
 QScrollArea { border: none; background: transparent; }
 QWidget#tabBody { background: #18222d; }
 QLabel:disabled, QCheckBox:disabled { color: #718496; }
+QLabel#muted:disabled { color: #607181; }
+QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled { color: #657687; background: #17212b; border-color: #283642; }
 QScrollBar:vertical { background: #17232e; width: 8px; margin: 0; }
 QScrollBar::handle:vertical { background: #41556a; border-radius: 4px; min-height: 25px; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
@@ -61,16 +70,28 @@ QSlider::groove:horizontal { height: 5px; background: #324354; border-radius: 2p
 QSlider::sub-page:horizontal { background: #51d7b8; border-radius: 2px; }
 QSlider::handle:horizontal { width: 13px; margin: -5px 0; border-radius: 6px; background: #81ecd2; }
 QCheckBox { spacing: 7px; }
-QCheckBox::indicator { width: 15px; height: 15px; border: 1px solid #577084; border-radius: 3px; background: #12202b; }
-QCheckBox::indicator:checked { background: #51d7b8; border-color: #51d7b8; }
+QCheckBox::indicator, QTreeWidget::indicator, QListWidget::indicator { width: 16px; height: 16px; border: 1px solid #577084; border-radius: 3px; background: #12202b; }
+QCheckBox::indicator:checked, QTreeWidget::indicator:checked, QListWidget::indicator:checked { background: #51d7b8; border-color: #51d7b8; image: url(CHECK_ICON); }
+QCheckBox::indicator:hover, QTreeWidget::indicator:hover, QListWidget::indicator:hover { border-color: #81ecd2; }
+QCheckBox::indicator:disabled { background: #23313f; border-color: #3b4d5e; }
 QSplitter::handle { background: #10171f; width: 7px; height: 7px; }
 QToolTip { background: #243746; color: #e5edf4; border: 1px solid #4b6379; padding: 6px; }
-"""
+""".replace("CHECK_ICON", '"' + resource_path("assets/check.svg").as_posix() + '"')
 
 
 def error_message(parent, error):
     text = error.localized() if isinstance(error, UserError) else str(error)
     QMessageBox.warning(parent, t("帧渡", "ZhenDu"), text)
+
+
+class SourceDelegate(QStyledItemDelegate):
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        brush = index.data(Qt.ItemDataRole.ForegroundRole)
+        option.palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#e5edf4"))
+        if isinstance(brush, QBrush) and brush.style() != Qt.BrushStyle.NoBrush:
+            option.palette.setBrush(QPalette.ColorRole.Text, brush)
+            option.palette.setBrush(QPalette.ColorRole.HighlightedText, brush)
 
 
 class SettingsDialog(QDialog):
@@ -340,6 +361,9 @@ class MainWindow(QMainWindow):
         self.files = {}
         self.media_infos = {}
         self.jobs = {}
+        self.batch_ids = []
+        self.active_source = ""
+        self._loading_settings = True
         self.task_queue = queue.Queue()
         self.worker = None
         self.current_path = ""
@@ -356,9 +380,14 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(STYLE)
         self.build_ui()
         try:
-            self.apply_config(JobConfig.from_dict(store.data.get("last_config", {})))
+            initial = JobConfig.from_dict(store.data.get("last_config", {}))
+            if not store.data["sync_settings"]["split"]:
+                initial.split = False
+            self.apply_config(initial)
         except (ValueError, TypeError, UserError):
             self.apply_config(JobConfig())
+        self.source_settings = SourceSettings(self.editor_values(), store.data["sync_settings"])
+        self._loading_settings = False
         self.retranslate()
         if store.load_warning:
             self.append_log(t("设置文件已备份并恢复默认值：{error}", "Settings were backed up and reset: {error}", error=store.load_warning))
@@ -428,6 +457,7 @@ class MainWindow(QMainWindow):
         files_layout.setContentsMargins(0, 0, 0, 0)
         files_layout.addWidget(self.label("素材列表", "Sources", "section"))
         self.file_tree = QTreeWidget()
+        self.file_tree.setItemDelegate(SourceDelegate(self.file_tree))
         self.file_tree.setColumnCount(1)
         self.file_tree.setHeaderHidden(True)
         self.file_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -471,6 +501,7 @@ class MainWindow(QMainWindow):
         queue_header.addWidget(self.button("打开输出", "Open output", self.open_output))
         middle_layout.addLayout(queue_header)
         self.task_tree = QTreeWidget()
+        self.task_tree.setObjectName("taskResults")
         self.task_tree.setColumnCount(3)
         self.task_tree.setRootIsDecorated(True)
         self.task_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -500,6 +531,10 @@ class MainWindow(QMainWindow):
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(4, 0, 0, 0)
         right_layout.addWidget(self.label("处理设置", "Processing", "section"))
+        self.config_target = QLabel()
+        self.config_target.setWordWrap(True)
+        self.config_target.setObjectName("muted")
+        right_layout.addWidget(self.config_target)
         row = QHBoxLayout()
         self.preset_combo = QComboBox()
         row.addWidget(self.preset_combo, 1)
@@ -517,6 +552,8 @@ class MainWindow(QMainWindow):
         self.splitter.setSizes([210, 730, 350])
         self.splitter.setStretchFactor(1, 1)
         compression = self.tab("压缩", "Compress")
+        self.sync_checks = {}
+        self.add_sync_option(compression, "compression")
         self.compress = self.check("启用视频压缩", "Encode / compress video")
         compression.addWidget(self.compress)
         self.video_settings = QWidget()
@@ -574,6 +611,7 @@ class MainWindow(QMainWindow):
         compression.addWidget(self.subtitles)
         compression.addStretch()
         trim = self.tab("截取", "Trim")
+        self.add_sync_option(trim, "clip")
         self.clip = self.check("启用截取片段", "Trim to A/B range")
         trim.addWidget(self.clip)
         trim_form = QFormLayout()
@@ -592,9 +630,13 @@ class MainWindow(QMainWindow):
         trim.addWidget(note)
         trim.addStretch()
         split = self.tab("分割", "Split")
+        self.add_sync_option(split, "split")
         self.split = self.check("启用分割片段", "Split into parts")
         split.addWidget(self.split)
-        split_form = QFormLayout()
+        self.split_options = QWidget()
+        split_options_layout = QVBoxLayout(self.split_options)
+        split_options_layout.setContentsMargins(0, 0, 0, 0)
+        split_form = self.split_form = QFormLayout()
         self.split_mode = self.combo([("count", "按段数", "By part count"), ("duration", "按每段时长", "By duration"), ("size", "按每段大小", "By size")])
         self.split_count = QSpinBox()
         self.split_count.setRange(2, 1000)
@@ -607,13 +649,14 @@ class MainWindow(QMainWindow):
         for chinese, english, widget in (("分割方式", "Split mode", self.split_mode), ("段数", "Part count", self.split_count),
                                          ("每段时长", "Part duration", self.split_duration), ("每段大小", "Part size", self.split_size)):
             self.form_row(split_form, chinese, english, widget)
-        split.addLayout(split_form)
+        split_options_layout.addLayout(split_form)
         self.size_safe = self.check("保守处理并验证不超过目标大小", "Conservative sizing; verify the limit")
         self.size_safe.setChecked(True)
-        split.addWidget(self.size_safe)
+        split_options_layout.addWidget(self.size_safe)
         note = self.label("关闭视频压缩时直接复制视频流，优先速度与原始质量。时间和大小切点会受关键帧影响。", "With video encoding off, parts copy the video stream for speed and original quality. Keyframes affect time and size boundaries.", "muted")
         note.setWordWrap(True)
-        split.addWidget(note)
+        split_options_layout.addWidget(note)
+        split.addWidget(self.split_options)
         split.addStretch()
         self.summary = QLabel()
         self.summary.setWordWrap(True)
@@ -659,6 +702,24 @@ class MainWindow(QMainWindow):
         self.audio_mode.currentIndexChanged.connect(self.controls_changed)
         self.clip_start.textChanged.connect(self.range_changed)
         self.clip_end.textChanged.connect(self.range_changed)
+        self.editors = {
+            "compress": self.compress, "codec": self.codec, "backend": self.backend, "speed": self.speed,
+            "quality": self.quality, "width": self.width, "height": self.height, "fps": self.fps,
+            "color_range": self.color, "advanced": self.advanced, "audio_mode": self.audio_mode,
+            "audio_bitrate": self.audio_bitrate, "audio_track": self.audio_track, "container": self.container,
+            "subtitles": self.subtitles, "clip": self.clip, "clip_start": self.clip_start, "clip_end": self.clip_end,
+            "split": self.split, "split_mode": self.split_mode, "split_count": self.split_count,
+            "split_duration": self.split_duration, "split_size_mb": self.split_size, "size_safe": self.size_safe,
+        }
+        for widget in self.editors.values():
+            if isinstance(widget, QCheckBox):
+                widget.toggled.connect(self.editor_changed)
+            elif isinstance(widget, QComboBox):
+                widget.currentIndexChanged.connect(self.editor_changed)
+            elif isinstance(widget, QLineEdit):
+                widget.textChanged.connect(self.editor_changed)
+            else:
+                widget.valueChanged.connect(self.editor_changed)
         self.refresh_presets()
 
     def retranslate(self):
@@ -681,9 +742,12 @@ class MainWindow(QMainWindow):
             self.update_job_item(job)
         if not self.jobs:
             self.progress_label.setText(t("准备就绪 · 勾选素材后开始处理", "Ready · check sources and start processing"))
+        elif self.worker is None and self.task_queue.empty():
+            self.update_batch_summary()
         if self.current_path:
             self.update_preview_title()
         self.refresh_result_actions()
+        self.update_sync_ui()
 
     def refresh_presets(self):
         identifier = self.preset_combo.currentData()
@@ -694,41 +758,87 @@ class MainWindow(QMainWindow):
         if index >= 0:
             self.preset_combo.setCurrentIndex(index)
 
-    def snapshot(self):
+    def add_sync_option(self, layout, group):
+        check = self.check("同步配置", "Sync settings")
+        check.setChecked(self.store.data["sync_settings"][group])
+        check.toggled.connect(lambda enabled, key=group: self.sync_changed(key, enabled))
+        self.sync_checks[group] = check
+        layout.addWidget(check)
+
+    def update_sync_ui(self):
+        for check in self.sync_checks.values():
+            check.setVisible(len(self.files) > 1)
+            check.setToolTip(t("开启：本页配置应用于全部素材。关闭：仅编辑当前素材，切换后保留。",
+                               "On: apply this page to all sources. Off: edit and remember each source separately."))
+        self.config_target.setText(t("设置对象：{name}", "Editing: {name}", name=Path(self.active_source).name)
+                                   if self.active_source else t("添加素材后可分别配置", "Add sources to configure them individually"))
+        self.config_target.setToolTip(self.active_source)
+
+    def sync_changed(self, group, enabled):
+        if self._loading_settings or not hasattr(self, "source_settings"):
+            return
+        values = self.editor_values()
+        self.source_settings.update(self.active_source, values)
+        self.source_settings.set_sync(group, enabled, values)
+        self.store.data["sync_settings"] = dict(self.source_settings.sync)
         try:
-            config = JobConfig(compress=self.compress.isChecked(), codec=self.codec.currentData(), backend=self.backend.currentData(),
-                               speed=self.speed.currentData(), quality=self.quality.value(), width=self.width.value() if self.advanced.isChecked() else 0,
-                               height=self.height.value() if self.advanced.isChecked() else 0, fps=self.fps.value() if self.advanced.isChecked() else 0,
-                               color_range=self.color.currentData() if self.advanced.isChecked() else "source", audio_mode=self.audio_mode.currentData(),
-                               audio_bitrate=self.audio_bitrate.value(), audio_track=self.audio_track.currentData(), container=self.container.currentData(),
-                               subtitles=self.subtitles.isChecked(), clip=self.clip.isChecked(), clip_start=parse_time(self.clip_start.text()),
-                               clip_end=parse_time(self.clip_end.text()) if self.clip_end.text().strip() else None,
-                               split=self.split.isChecked(), split_mode=self.split_mode.currentData(), split_count=self.split_count.value(),
-                               split_duration=parse_time(self.split_duration.text()), split_size_mb=self.split_size.value(), size_safe=self.size_safe.isChecked())
-            config.validate()
-            return config
-        except ValueError as error:
-            raise UserError("时间格式无效，请使用秒数或 HH:MM:SS。", "Invalid time. Use seconds or HH:MM:SS.") from error
+            self.store.save()
+        except OSError as error:
+            error_message(self, error)
+        self.update_sync_ui()
+
+    def editor_values(self):
+        values = {}
+        for key, widget in self.editors.items():
+            if isinstance(widget, QCheckBox):
+                values[key] = widget.isChecked()
+            elif isinstance(widget, QComboBox):
+                values[key] = widget.currentData()
+            elif isinstance(widget, QLineEdit):
+                values[key] = widget.text()
+            else:
+                values[key] = widget.value()
+        return values
+
+    def editor_changed(self, *_):
+        if not self._loading_settings and hasattr(self, "source_settings"):
+            self.source_settings.update(self.active_source, self.editor_values())
+
+    def snapshot(self):
+        return config_from_draft(self.editor_values())
+
+    def apply_values(self, values):
+        previous = self._loading_settings
+        self._loading_settings = True
+        try:
+            self._desired_audio_track = values["audio_track"]
+            for key, widget in self.editors.items():
+                value = values[key]
+                if isinstance(widget, QCheckBox):
+                    widget.setChecked(value)
+                elif isinstance(widget, QComboBox):
+                    index = widget.findData(value)
+                    if index < 0 and key == "audio_track":
+                        widget.addItem(t("音轨 {n}", "Audio track {n}", n=value + 1), value)
+                        index = widget.count() - 1
+                    if index >= 0:
+                        widget.setCurrentIndex(index)
+                elif isinstance(widget, QLineEdit):
+                    widget.setText(value)
+                else:
+                    widget.setValue(value)
+        finally:
+            self._loading_settings = previous
+        self.controls_changed()
 
     def apply_config(self, config):
-        mappings = ((self.codec, config.codec), (self.backend, config.backend), (self.speed, config.speed), (self.color, config.color_range),
-                    (self.audio_mode, config.audio_mode), (self.container, config.container), (self.split_mode, config.split_mode), (self.audio_track, config.audio_track))
-        for widget, value in mappings:
-            index = widget.findData(value)
-            if index >= 0:
-                widget.setCurrentIndex(index)
-        for widget, value in ((self.compress, config.compress), (self.clip, config.clip), (self.split, config.split),
-                              (self.subtitles, config.subtitles), (self.size_safe, config.size_safe)):
-            widget.setChecked(value)
-        for widget, value in ((self.quality, config.quality), (self.width, config.width), (self.height, config.height), (self.fps, config.fps),
-                              (self.audio_bitrate, config.audio_bitrate), (self.split_count, config.split_count), (self.split_size, config.split_size_mb)):
-            widget.setValue(value)
-        self.clip_start.setText(time_text(config.clip_start))
-        self.clip_end.setText(time_text(config.clip_end) if config.clip_end is not None else "")
-        self.split_duration.setText(time_text(config.split_duration))
-        self.advanced.setChecked(bool(config.width or config.height or config.fps or config.color_range != "source"))
-        self._desired_audio_track = config.audio_track
-        self.controls_changed()
+        self.apply_values(draft_from_config(config))
+        self.editor_changed()
+
+    def set_source_config(self, path, config):
+        self.source_settings.update(path, draft_from_config(config))
+        if path == self.active_source:
+            self.apply_values(self.source_settings.get(path))
 
     def controls_changed(self, *_):
         self.video_settings.setEnabled(self.compress.isChecked())
@@ -741,6 +851,10 @@ class MainWindow(QMainWindow):
         self.clip_end.setEnabled(self.clip.isChecked())
         self.split_mode.setEnabled(self.split.isChecked())
         mode = self.split_mode.currentData()
+        self.split_options.setEnabled(self.split.isChecked())
+        for value, widget in (("count", self.split_count), ("duration", self.split_duration), ("size", self.split_size)):
+            self.split_form.setRowVisible(widget, mode == value)
+        self.size_safe.setVisible(mode == "size")
         self.split_count.setEnabled(self.split.isChecked() and mode == "count")
         self.split_duration.setEnabled(self.split.isChecked() and mode == "duration")
         self.split_size.setEnabled(self.split.isChecked() and mode == "size")
@@ -754,6 +868,8 @@ class MainWindow(QMainWindow):
         self.range_changed()
 
     def range_changed(self, *_):
+        if self._loading_settings:
+            return
         if self.previewing_result:
             self.player.update_range(0, self.player.duration)
             return
@@ -780,14 +896,12 @@ class MainWindow(QMainWindow):
 
     def reset_range(self):
         self.clip_start.setText("00:00:00.000")
-        self.clip_end.setText(time_text(self.player.duration) if self.player.duration else "")
+        self.clip_end.clear()
 
     def player_loaded(self, duration):
         if self.previewing_result:
             self.range_changed()
             return
-        if not self.clip_end.text():
-            self.clip_end.setText(time_text(duration))
         self.range_changed()
 
     def add_dialog(self):
@@ -795,6 +909,8 @@ class MainWindow(QMainWindow):
         self.add_files(files)
 
     def add_files(self, paths):
+        self.editor_changed()
+        initial = self.editor_values() if not self.files else None
         first = None
         for path in paths:
             source = str(Path(path).resolve())
@@ -806,24 +922,69 @@ class MainWindow(QMainWindow):
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(0, Qt.CheckState.Checked)
             self.files[source] = item
+            self.source_settings.add(source, initial if not first else None)
             self.file_tree.addTopLevelItem(item)
             first = first or item
         if first:
             self.file_tree.setCurrentItem(first)
+        self.update_sync_ui()
 
     def remove_files(self):
-        for item in self.file_tree.selectedItems():
-            source = item.data(0, Qt.ItemDataRole.UserRole)
+        self.remove_source_paths([item.data(0, Qt.ItemDataRole.UserRole) for item in self.file_tree.selectedItems()])
+
+    def remove_source_paths(self, paths):
+        self.editor_changed()
+        self._loading_settings = True
+        for source in paths:
+            item = self.files.get(source)
+            if item is None:
+                continue
             self.file_tree.takeTopLevelItem(self.file_tree.indexOfTopLevelItem(item))
             self.files.pop(source, None)
-        if not self.files and not self.previewing_result:
-            self.player.clear()
-            self.current_path = ""
-            self.source_title.setText(t("预览", "Preview"))
-            self.info_label.clear()
+            self.source_settings.sources.pop(source, None)
+            self.media_infos.pop(source, None)
+        self._loading_settings = False
+        if not self.files:
+            if not self.previewing_result:
+                self.player.clear()
+                self.current_path = ""
+                self.source_title.setText(t("预览", "Preview"))
+                self.info_label.clear()
+            self.active_source = ""
+            self._source_preview_path = ""
+            self.apply_values(self.source_settings.blank())
+        elif self.active_source not in self.files:
+            item = self.file_tree.currentItem() or next(iter(self.files.values()))
+            self.file_tree.setCurrentItem(item)
+            self.select_preview(item, None)
+        self.update_sync_ui()
+
+    def finish_source(self, identifier):
+        source = self.jobs[identifier]["task"].source
+        related = [self.jobs[key] for key in self.batch_ids if self.jobs[key]["task"].source == source]
+        if any(job["status"] in {"queued", "running"} for job in related):
+            return
+        failed = next((job for job in reversed(related) if job["status"] == "error"), None)
+        cancelled = next((job for job in reversed(related) if job["status"] == "cancelled"), None)
+        if not failed and not cancelled:
+            self.remove_source_paths([source])
+            return
+        job = failed or cancelled
+        if source not in self.files:
+            item = QTreeWidgetItem([Path(source).name])
+            item.setData(0, Qt.ItemDataRole.UserRole, source)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            self.files[source] = item
+            self.source_settings.add(source, draft_from_config(job["task"].config))
+            self.file_tree.addTopLevelItem(item)
+        item = self.files[source]
+        item.setCheckState(0, Qt.CheckState.Unchecked)
+        item.setForeground(0, QBrush(QColor("#ff928a")) if failed else QBrush())
+        item.setToolTip(0, source + "\n" + job.get("error", t("已取消", "Cancelled")))
+        self.update_sync_ui()
 
     def select_preview(self, item, previous):
-        if not item:
+        if not item or self._loading_settings:
             return
         path = item.data(0, Qt.ItemDataRole.UserRole)
         self.load_preview(path)
@@ -835,18 +996,19 @@ class MainWindow(QMainWindow):
     def load_preview(self, path, result=False):
         if path == self.current_path and result == self.previewing_result:
             return
-        returning_to_source = self.previewing_result and not result and path == self._source_preview_path
+        self.editor_changed()
         if not self.previewing_result:
             self._source_preview_path = self.current_path
             if result:
                 self._desired_audio_track = self.audio_track.currentData()
         self.previewing_result = result
+        if not result and path in self.files:
+            self.active_source = path
+            self.apply_values(self.source_settings.get(path))
         self.current_path = path
         self.update_preview_title()
         self.info_label.setText(t("读取媒体信息…", "Reading media information…"))
-        if not result and not returning_to_source:
-            self.clip_start.setText("00:00:00.000")
-            self.clip_end.clear()
+        self.update_sync_ui()
         self.player.set_editing_enabled(not result)
         self.player.load(path)
         if path in self.probes:
@@ -865,16 +1027,23 @@ class MainWindow(QMainWindow):
         self.info_label.setText(f"{info.width} × {info.height}  ·  {info.fps:.3f} fps  ·  {time_text(info.duration)}  ·  {info.size / 1024**2:.1f} MiB  ·  {info.video_codec.upper()}")
         if self.previewing_result:
             return
+        previous = self._loading_settings
+        self._loading_settings = True
+        desired = self.audio_track.currentData()
+        self._desired_audio_track = desired if desired is not None else self._desired_audio_track
         self.audio_track.clear()
         self.audio_track.addItem(t("全部音轨", "All audio tracks"), -1)
         for index, audio in enumerate(info.audio):
             tags = audio.get("tags", {})
             self.audio_track.addItem(f"{index + 1} · {audio.get('codec_name', '')} · {tags.get('language', '')} {tags.get('title', '')}".strip(), index)
         index = self.audio_track.findData(getattr(self, "_desired_audio_track", -1))
-        if index >= 0:
-            self.audio_track.setCurrentIndex(index)
-        if not self.clip_end.text():
-            self.clip_end.setText(time_text(info.duration))
+        if index < 0:
+            desired = self._desired_audio_track
+            self.audio_track.addItem(t("音轨 {n}（不可用）", "Audio track {n} (unavailable)", n=desired + 1), desired)
+            index = self.audio_track.count() - 1
+        self.audio_track.setCurrentIndex(index)
+        self._loading_settings = previous
+        self.range_changed()
 
     def probe_failed(self, path, message):
         self.probes.pop(path, None)
@@ -927,28 +1096,54 @@ class MainWindow(QMainWindow):
             sources = [path for path, item in self.files.items() if item.checkState(0) == Qt.CheckState.Checked]
             if not sources:
                 raise UserError("请添加并勾选要处理的视频。", "Add and check the videos to process.")
-            config = self.snapshot()
+            self.editor_changed()
+            configs = {}
+            for source in sources:
+                try:
+                    configs[source] = config_from_draft(self.source_settings.get(source))
+                except UserError as error:
+                    raise UserError("{name}：{error}", "{name}: {error}", name=Path(source).name, error=error.localized()) from error
             self.store.data["output_dir"] = self.output_dir.text().strip()
             self.store.save()
-            self.enqueue(sources, config)
+            self.enqueue(sources, configs)
         except Exception as error:
             error_message(self, error)
 
     def enqueue(self, sources, config, output_root=None, task_subfolders=None):
         self.player.media.pause()
+        tasks = []
         for source in sources:
-            task = Task(uuid.uuid4().hex, str(Path(source).resolve()), JobConfig.from_dict(asdict(config)),
+            settings = config[source] if isinstance(config, dict) else config
+            task = Task(uuid.uuid4().hex, str(Path(source).resolve()), JobConfig.from_dict(asdict(settings)),
                         self.output_dir.text().strip() if output_root is None else output_root,
                         self.store.data.get("task_subfolders", False) if task_subfolders is None else task_subfolders,
                         str(self.store.root / "tasks"))
-            item = QTreeWidgetItem([Path(source).name, "", "0%"])
+            tasks.append(task)
+        if not tasks:
+            return
+        if not any(job["status"] in {"queued", "running"} for job in self.jobs.values()):
+            self.batch_ids = []
+            self.progress_bar.setValue(0)
+        for task in tasks:
+            item = QTreeWidgetItem([Path(task.source).name, "", "0%"])
             item.setData(0, Qt.ItemDataRole.UserRole, task.identifier)
-            item.setToolTip(0, str(source))
+            item.setToolTip(0, task.source)
             self.task_tree.addTopLevelItem(item)
             self.jobs[task.identifier] = {"task": task, "item": item, "status": "queued", "fraction": 0.0, "result": None}
+            self.batch_ids.append(task.identifier)
             self.update_job_item(self.jobs[task.identifier])
             self.task_queue.put(task)
+            if source_item := self.files.get(task.source):
+                source_item.setForeground(0, QBrush())
+                source_item.setToolTip(0, task.source)
+                source_item.setCheckState(0, Qt.CheckState.Checked)
+        self.update_batch_progress()
+        self.progress_label.setText(t("已排队 {n} 个任务", "Queued {n} tasks", n=len(self.batch_ids)))
         self.ensure_worker()
+
+    def update_batch_progress(self):
+        jobs = [self.jobs[identifier] for identifier in self.batch_ids]
+        self.progress_bar.setValue(round(sum(job["fraction"] for job in jobs) / max(len(jobs), 1) * 1000))
 
     def ensure_worker(self):
         if self.worker and self.worker.isRunning():
@@ -973,16 +1168,16 @@ class MainWindow(QMainWindow):
 
     def job_progress(self, identifier, data):
         job = self.jobs[identifier]
-        job["fraction"] = data["fraction"]
+        job["fraction"] = max(job["fraction"], min(1.0, max(0.0, data["fraction"])))
         self.update_job_item(job)
-        overall = sum(item["fraction"] for item in self.jobs.values()) / max(len(self.jobs), 1)
-        self.progress_bar.setValue(round(overall * 1000))
+        self.update_batch_progress()
         speed = data.get("speed", "")
         self.progress_label.setText(f"{Path(job['task'].source).name} · {data['stage']} · {data['fraction'] * 100:.1f}%  {speed}")
 
     def job_complete(self, identifier, result):
         job = self.jobs[identifier]
         job.update(status="complete", fraction=1.0, result=result)
+        self.update_batch_progress()
         for path in result.outputs:
             child = QTreeWidgetItem([Path(path).name, "", ""])
             child.setData(0, Qt.ItemDataRole.UserRole, identifier)
@@ -992,19 +1187,24 @@ class MainWindow(QMainWindow):
         job["item"].setExpanded(True)
         self.update_job_item(job)
         self.refresh_result_actions()
+        self.finish_source(identifier)
         self.append_log(t("完成：{n} 个文件，{size:.2f} MiB，用时 {seconds:.1f} 秒。", "Complete: {n} files, {size:.2f} MiB, {seconds:.1f} seconds.", n=len(result.outputs), size=result.output_size / 1024**2, seconds=result.elapsed))
 
     def job_failed(self, identifier, message, cancelled=False):
         job = self.jobs[identifier]
-        job.update(status="cancelled" if cancelled else "error", fraction=1.0)
+        job.update(status="cancelled" if cancelled else "error", fraction=1.0, error=message)
+        self.update_batch_progress()
         job["item"].setToolTip(1, message)
         self.update_job_item(job)
         self.refresh_result_actions()
+        self.finish_source(identifier)
         self.append_log(message)
 
     def update_job_item(self, job):
         labels = {"queued": ("排队", "Queued"), "running": ("处理中", "Running"), "complete": ("完成", "Complete"), "error": ("失败", "Failed"), "cancelled": ("已取消", "Cancelled")}
         job["item"].setText(1, t(*labels[job["status"]]))
+        if job["status"] == "error" and job.get("retried"):
+            job["item"].setText(1, t("失败（已重试）", "Failed (retried)"))
         job["item"].setText(2, "—" if job["status"] in {"error", "cancelled"} else f"{job['fraction'] * 100:.0f}%")
         for index in range(job["item"].childCount()):
             job["item"].child(index).setText(1, t("输出文件", "Output file"))
@@ -1018,12 +1218,21 @@ class MainWindow(QMainWindow):
         if self.worker:
             self.worker.deleteLater()
             self.worker = None
-        successful = sum(job["status"] == "complete" for job in self.jobs.values())
-        failed = sum(job["status"] == "error" for job in self.jobs.values())
-        self.progress_label.setText(t("任务结束 · 完成 {done} · 失败 {failed}", "Tasks finished · complete {done} · failed {failed}", done=successful, failed=failed))
-        self.progress_bar.setValue(round(sum(job["fraction"] for job in self.jobs.values()) / max(len(self.jobs), 1) * 1000))
+        if not self.task_queue.empty():
+            self.ensure_worker()
+            self.refresh_result_actions()
+            return
+        self.update_batch_summary()
+        self.update_batch_progress()
         self.ensure_worker()
         self.refresh_result_actions()
+
+    def update_batch_summary(self):
+        jobs = [self.jobs[identifier] for identifier in self.batch_ids]
+        successful = sum(job["status"] == "complete" for job in jobs)
+        failed = sum(job["status"] == "error" for job in jobs)
+        cancelled = sum(job["status"] == "cancelled" for job in jobs)
+        self.progress_label.setText(t("任务结束 · 完成 {done} · 失败 {failed} · 取消 {cancelled}", "Tasks finished · complete {done} · failed {failed} · cancelled {cancelled}", done=successful, failed=failed, cancelled=cancelled))
 
     def result_paths(self, selected=True):
         paths = []
@@ -1117,13 +1326,19 @@ class MainWindow(QMainWindow):
             self.task_tree.setCurrentItem(item)
         if not self.result_paths():
             return
+        menu = self.create_result_menu()
+        menu.exec(self.task_tree.viewport().mapToGlobal(point))
+        menu.deleteLater()
+
+    def create_result_menu(self):
         menu = QMenu(self)
+        menu.setStyleSheet(STYLE)
         for chinese, english, callback in (("复制文件", "Copy files", self.copy_selected_results),
                                            ("打开视频", "Open video", self.open_result),
                                            ("预览", "Preview", self.preview_result),
                                            ("打开输出", "Open output", self.open_output)):
             menu.addAction(t(chinese, english), callback)
-        menu.exec(self.task_tree.viewport().mapToGlobal(point))
+        return menu
 
     def cancel_tasks(self):
         if self.worker:
@@ -1137,12 +1352,16 @@ class MainWindow(QMainWindow):
             job.update(status="cancelled", fraction=1.0)
             self.update_job_item(job)
             self.task_queue.task_done()
+            self.finish_source(task.identifier)
+        self.update_batch_progress()
 
     def retry_failed(self):
         for job in list(self.jobs.values()):
-            if job["status"] == "error":
+            if job["status"] == "error" and not job.get("retried"):
                 task = job["task"]
                 self.enqueue([task.source], task.config, task.output_root, task.task_subfolders)
+                job["retried"] = True
+                self.update_job_item(job)
 
     def open_output(self):
         item = self.task_tree.currentItem()

@@ -4,10 +4,48 @@ from PySide6.QtCore import QEvent, QSignalBlocker, QTimer, QUrl, Qt, Signal
 from PySide6.QtGui import QKeySequence, QPixmap, QShortcut
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoFrame
 from PySide6.QtMultimediaWidgets import QVideoWidget
-from PySide6.QtWidgets import QCheckBox, QDialog, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QDialog, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider, QStackedWidget, QStyle, QStyleOptionSlider, QVBoxLayout, QWidget
 
 from .config import time_text
 from .language import t
+
+
+class SeekSlider(QSlider):
+    """Absolute click/drag seeking anywhere along the timeline groove."""
+
+    def position_value(self, point):
+        option = QStyleOptionSlider()
+        self.initStyleOption(option)
+        style = self.style()
+        groove = style.subControlRect(QStyle.ComplexControl.CC_Slider, option, QStyle.SubControl.SC_SliderGroove, self)
+        handle = style.subControlRect(QStyle.ComplexControl.CC_Slider, option, QStyle.SubControl.SC_SliderHandle, self)
+        span = max(1, groove.width() - handle.width())
+        position = round(point.x() - groove.left() - handle.width() / 2)
+        return QStyle.sliderValueFromPosition(self.minimum(), self.maximum(), position, span, option.upsideDown)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.isEnabled():
+            self.setFocus(Qt.FocusReason.MouseFocusReason)
+            self.setSliderDown(True)
+            self.setSliderPosition(self.position_value(event.position()))
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.isSliderDown() and event.buttons() & Qt.MouseButton.LeftButton:
+            self.setSliderPosition(self.position_value(event.position()))
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.isSliderDown():
+            self.setSliderPosition(self.position_value(event.position()))
+            self.setSliderDown(False)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
 
 class ExpandedPreview(QDialog):
@@ -40,7 +78,7 @@ class ExpandedPreview(QDialog):
         self.message = QLabel()
         self.message.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.message)
-        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider = SeekSlider(Qt.Orientation.Horizontal)
         self.slider.sliderPressed.connect(player.drag_start)
         self.slider.sliderMoved.connect(player.drag_move)
         self.slider.sliderReleased.connect(lambda: player.drag_end(self.slider.value()))
@@ -102,6 +140,7 @@ class ExpandedPreview(QDialog):
 
     def retranslate(self):
         self.setWindowTitle(t("放大预览", "Expanded preview") + " · " + Path(self.player.path).name)
+        self.slider.setToolTip(t("点击或拖动时间轴定位", "Click or drag anywhere on the timeline to seek"))
         for widget, chinese, english in self.bindings:
             widget.setText(t(chinese, english))
         self.hint.setText(t("空格：播放／暂停 · Esc / F11：返回 · 双击画面：返回", "Space: play / pause · Esc / F11: return · Double-click video: return"))
@@ -209,7 +248,7 @@ class Player(QWidget):
         self.message.setWordWrap(True)
         layout.addWidget(self.surface, 1)
         layout.addWidget(self.message)
-        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider = SeekSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(0, 1)
         layout.addWidget(self.slider)
         control = QHBoxLayout()
@@ -286,6 +325,7 @@ class Player(QWidget):
     def retranslate(self):
         for widget, chinese, english in self.bindings:
             widget.setText(t(chinese, english))
+        self.slider.setToolTip(t("点击或拖动时间轴定位", "Click or drag anywhere on the timeline to seek"))
         self.update_play_text()
         self.update_range(self.start, self.end)
         if self.expanded:

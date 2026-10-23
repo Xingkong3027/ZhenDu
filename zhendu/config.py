@@ -150,7 +150,8 @@ class Store:
         self.path = self.root / "settings.json"
         self.load_warning = ""
         self.data = {"schema_version": self.VERSION, "language": "auto", "output_dir": "", "task_subfolders": False,
-                     "presets": [], "last_config": {}}
+                     "presets": [], "last_config": {},
+                     "sync_settings": {"compression": True, "clip": False, "split": False}}
         if self.path.exists():
             try:
                 loaded = json.loads(self.path.read_text(encoding="utf-8"))
@@ -179,6 +180,10 @@ class Store:
             self.data["language"] = "auto"
         if type(self.data.get("task_subfolders")) is not bool:
             self.data["task_subfolders"] = False
+        defaults = {"compression": True, "clip": False, "split": False}
+        sync = self.data.get("sync_settings")
+        self.data["sync_settings"] = {key: sync[key] if isinstance(sync, dict) and type(sync.get(key)) is bool else value
+                                      for key, value in defaults.items()}
 
     @staticmethod
     def validate_preset(preset):

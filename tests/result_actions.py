@@ -52,6 +52,10 @@ try:
     checks["cancel_during_processing"] = window.cancel_button.text() in {"取消任务", "Cancel tasks"} and window.cancel_button.isEnabled()
     wait_for(lambda: window.worker is None, 45)
     jobs = list(window.jobs.values())
+    checks["successful_sources_removed"] = not window.files
+    window.add_files([source])
+    wait_for(lambda: window.player.play_button.isEnabled() and source in window.media_infos)
+    window.apply_config(editing)
     outputs = window.result_paths(False)
     checks["all_four_real_results"] = len(outputs) == 4 and all(Path(path).is_file() for path in outputs)
     checks["output_rows"] = all(job["item"].childCount() == 2 and job["item"].isExpanded() for job in jobs)
