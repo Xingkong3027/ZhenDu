@@ -147,7 +147,7 @@ try:
     checks["next_run_restores_cancel"] = window.cancel_button.text() in {"取消任务", "Cancel tasks"}
     window.cancel_tasks()
     wait_for(lambda: window.worker is None)
-    checks["cancel_keeps_prior_outputs_copyable"] = window.cancel_button.isEnabled() and window.result_paths(False) == outputs
+    checks["cancel_keeps_prior_outputs_copyable"] = not window.cancel_button.isEnabled() and window.result_paths(False) == outputs
     report["ok"] = all(checks.values())
 finally:
     # Restore the original clipboard, even when a regression fails.

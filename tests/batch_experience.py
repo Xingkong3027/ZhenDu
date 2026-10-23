@@ -184,6 +184,7 @@ try:
     wait_for(lambda: window.worker is None, 30)
     checks["new_batch_summary_excludes_history"] = "完成 1" in window.progress_label.text() and "完成 3" not in window.progress_label.text()
     checks["history_outputs_remain_copyable"] = len(window.result_paths(False)) == 4
+    checks["footer_copies_only_current_round"] = len(window.result_paths(False, current_batch=True)) == 1
     broken = root / "failed video.mp4"
     broken.write_bytes(b"not a video")
     failed_path = str(broken)
@@ -192,6 +193,7 @@ try:
     wait_for(lambda: window.worker is None, 30)
     item = window.files[failed_path]
     checks["failed_source_unchecked_red_and_retained"] = item.checkState(0) == Qt.CheckState.Unchecked and item.foreground(0).color().name() == "#ff928a"
+    checks["failed_round_cannot_copy_old_outputs"] = not window.cancel_button.isEnabled()
     language.selection = "en"
     window.retranslate()
     checks["english_sync_label"] = all(check.text() == "Sync settings" for check in window.sync_checks.values())
@@ -210,6 +212,18 @@ try:
     checks["retry_success_removes_source"] = failed_path not in window.files and len(window.jobs) == before + 1
     window.retry_failed()
     checks["old_failure_not_retried_twice"] = len(window.jobs) == before + 1
+    # Manual reprocessing also resolves its previous failed entry.
+    broken.write_bytes(b"not a video again")
+    window.add_files([failed_path])
+    window.start_processing()
+    wait_for(lambda: window.worker is None)
+    broken.write_bytes(Path(short).read_bytes())
+    window.files[failed_path].setCheckState(0, Qt.CheckState.Checked)
+    window.start_processing()
+    wait_for(lambda: window.worker is None)
+    before_manual_retry = len(window.jobs)
+    window.retry_failed()
+    checks["manual_correction_retires_old_failure"] = len(window.jobs) == before_manual_retry and failed_path not in window.files
     window.add_files([short])
     select(short)
     window.enqueue([short, short], JobConfig())

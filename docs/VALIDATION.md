@@ -2,9 +2,9 @@
 
 ## 2.1.0 批量体验 / Batch experience
 
-新增 6 项独立素材配置测试，覆盖默认同步、同步开关转换、新素材隔离、未完成草稿、空终点按各自时长计算、配置快照和旧设置迁移。42 项实际 Qt 检查覆盖两条不同截取／分割规则的真实视频任务、轮次进度、成功移除、失败标红与取消勾选、重试去重、深色菜单像素，以及主／放大时间轴的鼠标点击和拖动。原有结果复制、有声预览、IPC、输出和注册表检查继续运行。
+新增 6 项独立素材配置测试，覆盖默认同步、同步开关转换、新素材隔离、未完成草稿、空终点按各自时长计算、配置快照和旧设置迁移。45 项实际 Qt 检查覆盖两条不同截取／分割规则的真实视频任务、轮次进度、成功移除、失败标红与取消勾选、重试去重、深色菜单像素，以及主／放大时间轴的鼠标点击和拖动。原有结果复制、有声预览、IPC、输出和注册表检查继续运行。
 
-Six new unit checks cover source synchronization, toggling, new-source isolation, unfinished drafts, per-video end times, immutable snapshots and settings migration. 42 real Qt checks cover different trim/split jobs, fresh-round progress, success removal, unchecked red failures, retry deduplication, dark menu pixels, and actual mouse input on both preview timelines. Existing file-clipboard, audio preview, IPC, output and registry checks remain in place.
+Six new unit checks cover source synchronization, toggling, new-source isolation, unfinished drafts, per-video end times, immutable snapshots and settings migration. 45 real Qt checks cover different trim/split jobs, fresh-round progress, success removal, unchecked red failures, retry deduplication, dark menu pixels, and actual mouse input on both preview timelines. Existing file-clipboard, audio preview, IPC, output and registry checks remain in place.
 
 ## 2.0.3 结果操作 / Result actions
 

@@ -79,15 +79,15 @@ For example, share compression while trimming source A to 2–8 seconds and spli
 
 Before submission, all checked sources are validated, and invalid settings identify the affected file without submitting a partial batch. Queued jobs retain their captured settings. Explorer preset commands explicitly apply that preset to all files passed in that request.
 
-**Successful sources are removed automatically**, while task results remain available for copying/opening/preview. **Failed sources remain unchecked and red**; hover or view the log for details, edit and check again, or retry with the failed job's original parameters. Cancelled sources remain unchecked. Already retried historical failures are not submitted repeatedly.
+**Successful sources are removed automatically**, while task results remain available for copying/opening/preview. **Failed sources remain unchecked and red**; hover or view the log for details, edit and check again, or retry with the failed job's original parameters. Cancelled sources remain unchecked. Retrying or manually correcting and resubmitting marks the old failure as resubmitted, so old parameters are not retried repeatedly.
 
-Each new round starts at 0 and counts only its own jobs, including jobs appended while it is active. Historical tasks no longer make a new round start at 50%. Completion/failure/cancellation counts also refer to that round.
+Each new round starts at 0 and counts only its own jobs, including jobs appended while it is active. Historical tasks no longer make a new round start at 50%. Completion/failure/cancellation counts also refer to that round. The bottom Copy files button copies only successful results from that round; select historical videos in the queue to copy them. A failed/cancelled round cannot accidentally copy older results.
 
 Disabled splitting grays out its parameters and help text. Count mode shows only part count, duration mode only duration, and size mode only size plus conservative verification. Both preview timelines support clicking or dragging anywhere on the groove, preserving playback/pause state.
 
 ## After processing
 
-The bottom **Copy files** button copies every completed video in the current queue, including all split parts. Press **Ctrl+V** in File Explorer or another application that supports pasting files. The Windows file clipboard requests a copy, keeping original outputs in place; support in other applications depends on the recipient.
+The bottom **Copy files** button copies every successful video from the current round, including all split parts. Press **Ctrl+V** in File Explorer or another application that supports pasting files. The Windows file clipboard requests a copy, keeping original outputs in place; support in other applications depends on the recipient.
 
 Completed tasks expand to show their output files. Select a task row for all its outputs, or select an individual video. Ctrl/Shift enables multiple selection; selecting a parent and its child does not duplicate a file.
 

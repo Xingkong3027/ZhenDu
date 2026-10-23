@@ -1109,7 +1109,7 @@ class MainWindow(QMainWindow):
         except Exception as error:
             error_message(self, error)
 
-    def enqueue(self, sources, config, output_root=None, task_subfolders=None):
+    def enqueue(self, sources, config, output_root=None, task_subfolders=None, *, supersede_errors=True):
         self.player.media.pause()
         tasks = []
         for source in sources:
@@ -1121,6 +1121,12 @@ class MainWindow(QMainWindow):
             tasks.append(task)
         if not tasks:
             return
+        if supersede_errors:
+            paths = {task.source for task in tasks}
+            for old_job in self.jobs.values():
+                if old_job["status"] == "error" and old_job["task"].source in paths:
+                    old_job["retried"] = True
+                    self.update_job_item(old_job)
         if not any(job["status"] in {"queued", "running"} for job in self.jobs.values()):
             self.batch_ids = []
             self.progress_bar.setValue(0)
@@ -1204,7 +1210,7 @@ class MainWindow(QMainWindow):
         labels = {"queued": ("排队", "Queued"), "running": ("处理中", "Running"), "complete": ("完成", "Complete"), "error": ("失败", "Failed"), "cancelled": ("已取消", "Cancelled")}
         job["item"].setText(1, t(*labels[job["status"]]))
         if job["status"] == "error" and job.get("retried"):
-            job["item"].setText(1, t("失败（已重试）", "Failed (retried)"))
+            job["item"].setText(1, t("失败（已重新提交）", "Failed (resubmitted)"))
         job["item"].setText(2, "—" if job["status"] in {"error", "cancelled"} else f"{job['fraction'] * 100:.0f}%")
         for index in range(job["item"].childCount()):
             job["item"].child(index).setText(1, t("输出文件", "Output file"))
@@ -1234,9 +1240,10 @@ class MainWindow(QMainWindow):
         cancelled = sum(job["status"] == "cancelled" for job in jobs)
         self.progress_label.setText(t("任务结束 · 完成 {done} · 失败 {failed} · 取消 {cancelled}", "Tasks finished · complete {done} · failed {failed} · cancelled {cancelled}", done=successful, failed=failed, cancelled=cancelled))
 
-    def result_paths(self, selected=True):
+    def result_paths(self, selected=True, current_batch=False):
         paths = []
-        items = self.task_tree.selectedItems() if selected else [job["item"] for job in self.jobs.values()]
+        jobs = [self.jobs[key] for key in self.batch_ids] if current_batch else self.jobs.values()
+        items = self.task_tree.selectedItems() if selected else [job["item"] for job in jobs]
         for item in items:
             job = self.jobs.get(item.data(0, Qt.ItemDataRole.UserRole))
             if not job or job["status"] != "complete" or not job["result"]:
@@ -1256,19 +1263,19 @@ class MainWindow(QMainWindow):
         active = self.worker is not None or not self.task_queue.empty()
         copying = bool(self.jobs) and not active
         self.cancel_button.setText(t("复制文件", "Copy files") if copying else t("取消任务", "Cancel tasks"))
-        self.cancel_button.setEnabled(active or bool(self.result_paths(False)))
+        self.cancel_button.setEnabled(active or bool(self.result_paths(False, current_batch=True)))
         object_name = "primary" if copying else "danger"
         if self.cancel_button.objectName() != object_name:
             self.cancel_button.setObjectName(object_name)
             self.cancel_button.style().unpolish(self.cancel_button)
             self.cancel_button.style().polish(self.cancel_button)
-        self.cancel_button.setToolTip(t("复制本次队列中所有已完成的视频，可直接粘贴到资源管理器。", "Copy all completed videos in this queue for pasting into File Explorer.") if copying else "")
+        self.cancel_button.setToolTip(t("复制本轮成功的视频，可直接粘贴到资源管理器。历史结果可在队列中选中复制。", "Copy successful videos from this round. Select older results in the queue to copy them.") if copying else "")
 
     def task_footer_action(self):
         if self.worker is not None or not self.task_queue.empty():
             self.cancel_tasks()
         else:
-            self.copy_result_files(self.result_paths(False))
+            self.copy_result_files(self.result_paths(False, current_batch=True))
 
     def copy_selected_results(self):
         self.copy_result_files(self.result_paths())
@@ -1359,7 +1366,7 @@ class MainWindow(QMainWindow):
         for job in list(self.jobs.values()):
             if job["status"] == "error" and not job.get("retried"):
                 task = job["task"]
-                self.enqueue([task.source], task.config, task.output_root, task.task_subfolders)
+                self.enqueue([task.source], task.config, task.output_root, task.task_subfolders, supersede_errors=False)
                 job["retried"] = True
                 self.update_job_item(job)
 
