@@ -16,6 +16,7 @@ from . import __version__
 from .config import JobConfig, Store, atomic_json, parse_time, time_text
 from .language import UserError, language, t, translate_standard_widgets
 from .media import ProbeCache
+from .output_sizes import format_size
 from .paths import resource_path
 from .player import Player
 from .shell import ShellIntegration
@@ -497,12 +498,14 @@ class MainWindow(QMainWindow):
         queue_header = QHBoxLayout()
         queue_header.addWidget(self.label("任务队列", "Tasks", "section"))
         queue_header.addStretch()
+        self.clear_tasks_button = self.button("清空列表", "Clear list", self.clear_task_list)
+        queue_header.addWidget(self.clear_tasks_button)
         queue_header.addWidget(self.button("重试失败任务", "Retry failed", self.retry_failed))
         queue_header.addWidget(self.button("打开输出", "Open output", self.open_output))
         middle_layout.addLayout(queue_header)
         self.task_tree = QTreeWidget()
         self.task_tree.setObjectName("taskResults")
-        self.task_tree.setColumnCount(3)
+        self.task_tree.setColumnCount(4)
         self.task_tree.setRootIsDecorated(True)
         self.task_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.task_tree.setMinimumHeight(110)
@@ -510,6 +513,7 @@ class MainWindow(QMainWindow):
         self.task_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.task_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.task_tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.task_tree.header().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.task_tree.itemDoubleClicked.connect(self.activate_result)
         self.task_tree.itemSelectionChanged.connect(self.refresh_result_actions)
         self.task_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -733,7 +737,8 @@ class MainWindow(QMainWindow):
                     widget.setItemText(index, t(chinese, english))
         for index, chinese, english in self.tab_titles:
             self.tabs.setTabText(index, t(chinese, english))
-        self.task_tree.setHeaderLabels([t("视频", "Video"), t("状态", "Status"), t("进度", "Progress")])
+        self.task_tree.setHeaderLabels([t("视频", "Video"), t("状态", "Status"), t("进度", "Progress"), t("输出大小", "Output size")])
+        self.clear_tasks_button.setToolTip(t("仅在任务停止后清空队列记录，不删除任何视频。", "Clear task records only when idle. Video files are kept."))
         self.audio_track.setItemText(0, t("全部音轨", "All audio tracks"))
         self.player.retranslate()
         self.refresh_presets()
@@ -1135,7 +1140,8 @@ class MainWindow(QMainWindow):
             item.setData(0, Qt.ItemDataRole.UserRole, task.identifier)
             item.setToolTip(0, task.source)
             self.task_tree.addTopLevelItem(item)
-            self.jobs[task.identifier] = {"task": task, "item": item, "status": "queued", "fraction": 0.0, "result": None}
+            self.jobs[task.identifier] = {"task": task, "item": item, "status": "queued", "fraction": 0.0, "result": None,
+                                          "output_size": 0, "live_parts": {}}
             self.batch_ids.append(task.identifier)
             self.update_job_item(self.jobs[task.identifier])
             self.task_queue.put(task)
@@ -1167,28 +1173,47 @@ class MainWindow(QMainWindow):
         self.refresh_result_actions()
 
     def job_started(self, identifier, path):
-        job = self.jobs[identifier]
+        job = self.jobs.get(identifier)
+        if not job:
+            return
         job["status"] = "running"
         self.update_job_item(job)
         self.append_log(t("开始处理：{name}", "Processing: {name}", name=Path(path).name))
 
     def job_progress(self, identifier, data):
-        job = self.jobs[identifier]
+        job = self.jobs.get(identifier)
+        if not job or job["status"] in {"complete", "error", "cancelled"}:
+            return
         job["fraction"] = max(job["fraction"], min(1.0, max(0.0, data["fraction"])))
+        if "output_size" in data:
+            job["output_size"] = data["output_size"]
+        if "part_sizes" in data:
+            self.update_live_parts(identifier, data["part_sizes"])
         self.update_job_item(job)
         self.update_batch_progress()
         speed = data.get("speed", "")
         self.progress_label.setText(f"{Path(job['task'].source).name} · {data['stage']} · {data['fraction'] * 100:.1f}%  {speed}")
 
     def job_complete(self, identifier, result):
-        job = self.jobs[identifier]
-        job.update(status="complete", fraction=1.0, result=result)
+        job = self.jobs.get(identifier)
+        if not job:
+            return
+        job.update(status="complete", fraction=1.0, result=result, output_size=result.output_size, part_sizes={})
+        job["item"].takeChildren()
+        job["live_parts"] = {}
         self.update_batch_progress()
         for path in result.outputs:
             child = QTreeWidgetItem([Path(path).name, "", ""])
             child.setData(0, Qt.ItemDataRole.UserRole, identifier)
             child.setData(0, Qt.ItemDataRole.UserRole + 1, path)
             child.setToolTip(0, path)
+            try:
+                size = Path(path).stat().st_size
+                job["part_sizes"][Path(path).name] = size
+                child.setText(3, format_size(size))
+                child.setToolTip(3, t("{n:,} 字节", "{n:,} bytes", n=size))
+            except OSError:
+                child.setText(3, "—")
             job["item"].addChild(child)
         job["item"].setExpanded(True)
         self.update_job_item(job)
@@ -1197,8 +1222,12 @@ class MainWindow(QMainWindow):
         self.append_log(t("完成：{n} 个文件，{size:.2f} MiB，用时 {seconds:.1f} 秒。", "Complete: {n} files, {size:.2f} MiB, {seconds:.1f} seconds.", n=len(result.outputs), size=result.output_size / 1024**2, seconds=result.elapsed))
 
     def job_failed(self, identifier, message, cancelled=False):
-        job = self.jobs[identifier]
+        job = self.jobs.get(identifier)
+        if not job:
+            return
         job.update(status="cancelled" if cancelled else "error", fraction=1.0, error=message)
+        job["item"].takeChildren()
+        job["live_parts"] = {}
         self.update_batch_progress()
         job["item"].setToolTip(1, message)
         self.update_job_item(job)
@@ -1206,14 +1235,65 @@ class MainWindow(QMainWindow):
         self.finish_source(identifier)
         self.append_log(message)
 
+    def update_live_parts(self, identifier, sizes):
+        job = self.jobs[identifier]
+        rows = job["live_parts"]
+        had_rows = bool(rows)
+        job["part_sizes"] = dict(sizes)
+        for name in list(rows):
+            if name not in sizes:
+                child = rows.pop(name)
+                job["item"].takeChild(job["item"].indexOfChild(child))
+        for name, size in sizes.items():
+            if name not in rows:
+                child = QTreeWidgetItem([name, "", "", ""])
+                child.setData(0, Qt.ItemDataRole.UserRole, identifier)
+                job["item"].addChild(child)
+                rows[name] = child
+            rows[name].setText(3, format_size(size))
+            rows[name].setToolTip(3, t("写入中：{n:,} 字节，封装完成后可能调整。", "Writing: {n:,} bytes. May change until finalization.", n=size))
+        if sizes and not had_rows:
+            job["item"].setExpanded(True)
+
     def update_job_item(self, job):
         labels = {"queued": ("排队", "Queued"), "running": ("处理中", "Running"), "complete": ("完成", "Complete"), "error": ("失败", "Failed"), "cancelled": ("已取消", "Cancelled")}
         job["item"].setText(1, t(*labels[job["status"]]))
         if job["status"] == "error" and job.get("retried"):
             job["item"].setText(1, t("失败（已重新提交）", "Failed (resubmitted)"))
         job["item"].setText(2, "—" if job["status"] in {"error", "cancelled"} else f"{job['fraction'] * 100:.0f}%")
+        size = job.get("output_size", 0)
+        visible = job["status"] in {"running", "complete"}
+        job["item"].setText(3, format_size(size) if visible else "—")
+        if visible:
+            tooltip = t("输出合计：{n:,} 字节", "Total output: {n:,} bytes", n=size)
+            config = job["task"].config
+            if config.split and config.split_mode == "size":
+                largest = max(job.get("part_sizes", {}).values(), default=0)
+                limit = config.split_size_mb * 1024**2
+                tooltip += "\n" + t("每段目标：{target}；目前最大片段：{largest}（合计不是单段上限）", "Per-part target: {target}; largest part: {largest} (the total is not a per-part limit)", target=format_size(limit), largest=format_size(largest))
+                if largest > limit:
+                    job["item"].setText(3, format_size(size) + " ↑")
+                    tooltip += "\n" + t("已有片段超过目标大小。", "A part has exceeded the target size.")
+            if job["status"] == "running":
+                tooltip += "\n" + t("约每半秒刷新；最终大小以处理完成为准。", "Updated about every half second; final size is confirmed on completion.")
+            job["item"].setToolTip(3, tooltip)
+        else:
+            job["item"].setToolTip(3, t("未保留成功输出；处理中曾写入 {size}。", "No successful output retained; {size} was written during processing.", size=format_size(size)) if size else "")
         for index in range(job["item"].childCount()):
-            job["item"].child(index).setText(1, t("输出文件", "Output file"))
+            job["item"].child(index).setText(1, t("输出文件", "Output file") if job["status"] == "complete" else t("写入中", "Writing"))
+
+    def clear_task_list(self):
+        if self.tasks_active():
+            return
+        self.jobs.clear()
+        self.batch_ids.clear()
+        self.task_tree.clear()
+        self.progress_bar.setValue(0)
+        self.progress_label.setText(t("准备就绪 · 勾选素材后开始处理", "Ready · check sources and start processing"))
+        self.refresh_result_actions()
+
+    def tasks_active(self):
+        return self.worker is not None or not self.task_queue.empty() or any(job["status"] in {"queued", "running"} for job in self.jobs.values())
 
     def worker_finished(self):
         finished = self.sender()
@@ -1260,7 +1340,8 @@ class MainWindow(QMainWindow):
         self.copy_result_button.setEnabled(bool(selected))
         self.open_video_button.setEnabled(bool(selected))
         self.preview_result_button.setEnabled(bool(selected))
-        active = self.worker is not None or not self.task_queue.empty()
+        active = self.tasks_active()
+        self.clear_tasks_button.setEnabled(bool(self.jobs) and not active)
         copying = bool(self.jobs) and not active
         self.cancel_button.setText(t("复制文件", "Copy files") if copying else t("取消任务", "Cancel tasks"))
         self.cancel_button.setEnabled(active or bool(self.result_paths(False, current_batch=True)))

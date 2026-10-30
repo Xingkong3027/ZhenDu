@@ -75,13 +75,14 @@ class Runner:
         finally:
             self.finish(process)
 
-    def lines(self, args, timeout=None):
+    def lines(self, args, timeout=None, tick=None):
         process = self.start(args)
         messages = queue.Queue(maxsize=128)
         errors = []
         finished = threading.Event()
         stopped = threading.Event()
         started = time.monotonic()
+        last_tick = 0.0
 
         def stdout_reader():
             try:
@@ -115,6 +116,9 @@ class Runner:
         try:
             while not finished.is_set() or not messages.empty():
                 self.check()
+                if tick and time.monotonic() - last_tick >= 0.5:
+                    last_tick = time.monotonic()
+                    tick()
                 if timeout and time.monotonic() - started > timeout:
                     raise TimeoutError("Process timed out")
                 try:

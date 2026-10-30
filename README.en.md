@@ -49,7 +49,7 @@ Python is not required. Keep `_internal`, `ffmpeg` and the license files beside 
 
 The target is **64-bit Windows 10/11**. Local desktop validation used Windows 10 22H2. Hardware encoding needs compatible hardware and drivers. There is currently no installer, automatic updater, digital signature, or macOS/Linux release.
 
-Compare downloads with `SHA256SUMS.txt` on the release page. In PowerShell: `Get-FileHash .\ZhenDu-2.1.0-windows-x64-portable.zip -Algorithm SHA256`.
+Compare downloads with `SHA256SUMS.txt` on the release page. In PowerShell: `Get-FileHash .\ZhenDu-2.1.1-windows-x64-portable.zip -Algorithm SHA256`.
 
 ## Quick start
 
@@ -82,6 +82,12 @@ Before submission, all checked sources are validated, and invalid settings ident
 **Successful sources are removed automatically**, while task results remain available for copying/opening/preview. **Failed sources remain unchecked and red**; hover or view the log for details, edit and check again, or retry with the failed job's original parameters. Cancelled sources remain unchecked. Retrying or manually correcting and resubmitting marks the old failure as resubmitted, so old parameters are not retried repeatedly.
 
 Each new round starts at 0 and counts only its own jobs, including jobs appended while it is active. Historical tasks no longer make a new round start at 50%. Completion/failure/cancellation counts also refer to that round. The bottom Copy files button copies only successful results from that round; select historical videos in the queue to copy them. A failed/cancelled round cannot accidentally copy older results.
+
+The task queue's **Output size** column updates bytes written about every half second during processing and shows actual file sizes on completion. Split-task parents show the total; expand them for individual parts. Hover for exact bytes. In size-based splitting, `↑` indicates that a part has exceeded its target; hover for the target and largest part. A total above the per-part target alone does not trigger this indicator.
+
+Live sizes describe current writes, **not a final-size prediction or an automatic stop condition**. Finalizing the container or retrying a size-based split can change the value. Analysis files and duplicate encoding/remux copies of one part are not counted twice. Failed/cancelled tasks show `—`, so cleaned-up temporary data is not mistaken for retained output.
+
+**Clear list** beside the queue is available only after all tasks stop. It remains disabled while tasks are queued, running or still cancelling. It clears task records, result selection and progress, keeping video files and the source list. Open older results from disk after clearing.
 
 Disabled splitting grays out its parameters and help text. Count mode shows only part count, duration mode only duration, and size mode only size plus conservative verification. Both preview timelines support clicking or dragging anywhere on the groove, preserving playback/pause state.
 

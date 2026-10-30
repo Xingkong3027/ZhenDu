@@ -1,5 +1,21 @@
 # 更新记录 / Changelog
 
+## 2.1.1 — 2026-10-30
+
+### 简体中文
+
+- 任务队列新增“清空列表”，仅空闲时可用，清理记录与进度，保留视频和素材。
+- 任务与分段新增输出大小，处理中约每半秒刷新，完成后核对实际字节。分析中间文件及同一片段的编码／封装副本不重复统计。
+- 按大小分割的超限标记依据单段大小，避免把合计误认为单段超限。取消／失败不显示已清理的临时输出为成功结果。
+- 清空后重置结果操作与轮次进度，忽略已清空记录的迟到进度。增加实际写入、清空保护、取消和双语回归检查。
+
+### English
+
+- Add idle-only **Clear list**, resetting records/progress while keeping videos and sources.
+- Show live output bytes for tasks and parts, refreshed about every half second and confirmed on completion. Exclude analysis files and duplicate encoding/remux copies.
+- Base size-split overflow indicators on individual parts, not totals. Do not show cleaned-up failed/cancelled writes as successful output.
+- Reset result actions and round progress on clearing and ignore late updates for cleared records. Add real-write, clearing-guard, cancellation and bilingual regressions.
+
 ## 2.1.0 — 2026-10-24
 
 ### 简体中文

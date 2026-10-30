@@ -1,5 +1,11 @@
 # 验证范围 / Validation scope
 
+## 2.1.1 输出大小与清空队列 / Output sizes and queue clearing
+
+新增单元检查覆盖单位显示、分析／临时文件排除、分段重试和封装去重、采样节流与读取失败，以及 FFmpeg 没有进度文本时仍定期采样。`tests.queue_sizes` 使用实际限速读取的视频任务验证处理中大小增长、分段合计、完成后精确字节、排队与取消期间清空保护、清空保留文件／素材、迟到信号、下一轮进度、失败结果与双语布局。源代码 CI 与标签发布 CI 都运行这些检查。
+
+New unit checks cover size units, excluded analysis/temporary files, retry/remux deduplication, throttling/read failures, and periodic sampling without process stdout. `tests.queue_sizes` uses real paced video jobs to check growing output bytes, split totals, exact final sizes, clearing guards during queueing/cancellation, preserved files/sources, late signals, fresh progress, failures and bilingual layouts. Both source and release CI run these checks.
+
 ## 2.1.0 批量体验 / Batch experience
 
 新增 6 项独立素材配置测试，覆盖默认同步、同步开关转换、新素材隔离、未完成草稿、空终点按各自时长计算、配置快照和旧设置迁移。45 项实际 Qt 检查覆盖两条不同截取／分割规则的真实视频任务、轮次进度、成功移除、失败标红与取消勾选、重试去重、深色菜单像素，以及主／放大时间轴的鼠标点击和拖动。原有结果复制、有声预览、IPC、输出和注册表检查继续运行。

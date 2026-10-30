@@ -14,6 +14,7 @@ from .config import JobConfig, atomic_json, safe_name
 from .language import UserError, t
 from .media import ProbeCache, number, probe, video_span
 from .paths import config_root, media_binary
+from .output_sizes import OutputSizes
 from .process import Runner
 
 
@@ -124,6 +125,7 @@ class Engine:
         self.available = None
         self.checked_encoders = set()
         self.commands = []
+        self.output_sizes = None
 
     def cancel(self):
         self.runner.cancel()
@@ -161,6 +163,8 @@ class Engine:
         return [media_binary("ffmpeg.exe"), "-hide_banner", "-loglevel", "warning", "-nostdin", "-y", "-nostats", "-progress", "pipe:1"]
 
     def emit(self, fraction, stage, **stats):
+        if self.output_sizes:
+            stats.update(self.output_sizes.snapshot())
         self.progress({"fraction": min(max(fraction, 0.0), 0.995), "stage": stage, **stats})
 
     def run_ffmpeg(self, args, duration, base=0.0, span=1.0, stage=None):
@@ -168,16 +172,25 @@ class Engine:
         self.commands.append([str(arg) for arg in args])
         self.log(subprocess.list2cmdline([str(arg) for arg in args]))
         values = {}
-        for line in self.runner.lines(args):
+        fraction, stats = base, {}
+
+        def report(force=False):
+            if force and self.output_sizes:
+                self.output_sizes.snapshot(force=True)
+            self.emit(fraction, stage, **stats)
+
+        for line in self.runner.lines(args, tick=report):
             if "=" not in line:
                 continue
             key, value = line.split("=", 1)
             values[key] = value
             if key == "progress":
                 position = number(values.get("out_time_us")) / 1000000
-                self.emit(base + span * min(max(position / duration, 0), 1) if duration else base, stage,
-                          position=position, speed=values.get("speed", ""), fps=values.get("fps", ""),
-                          size=number(values.get("total_size")))
+                fraction = base + span * min(max(position / duration, 0), 1) if duration else base
+                stats = {"position": position, "speed": values.get("speed", ""), "fps": values.get("fps", ""),
+                         "size": number(values.get("total_size"))}
+                report()
+        report(force=True)
 
     def input_args(self, source, start=0.0):
         return (["-ss", f"{start:.6f}"] if start > 0 else []) + ["-i", str(source)]
@@ -301,6 +314,8 @@ class Engine:
             output = stage_dir / (safe_name(Path(source).stem) + f"_part{part:03d}" + extension)
             attempt_threshold = threshold
             for attempt in range(4 if config.size_safe else 1):
+                if self.output_sizes:
+                    self.output_sizes.part(output.name, encoding=True)
                 args = self.base() + self.input_args(source, start + position) + encoding_args(config, info, extension, self.available)
                 args += ["-t", f"{length - position:.6f}", "-fs", str(attempt_threshold), "-avoid_negative_ts", "make_zero", str(temporary)]
                 self.run_ffmpeg(args, length, base=position / length, span=1, stage=t("大小分割：第 {n} 段", "Size splitting: part {n}", n=part))
@@ -309,6 +324,8 @@ class Engine:
                     raise UserError("分段视频时长异常，已停止以避免重复处理。", "Invalid segment duration; stopped to avoid repeating the same range.")
                 trim = self.base() + ["-i", str(temporary), "-map", "0", "-c", "copy", "-t", f"{first_pts + duration:.6f}",
                                       "-avoid_negative_ts", "make_zero", str(output)]
+                if self.output_sizes:
+                    self.output_sizes.part(output.name, encoding=False)
                 self.run_ffmpeg(trim, length, base=position / length, span=0, stage=t("对齐分段音视频", "Aligning segment audio and video"))
                 size = output.stat().st_size
                 if not config.size_safe or size <= target:
@@ -317,6 +334,8 @@ class Engine:
                     raise UserError("分段重试后仍超过目标大小，请提高上限。", "The part still exceeds the size limit after retries; increase the limit.")
                 attempt_threshold = max(256 * 1024, int(attempt_threshold * min(0.85, target / size * 0.92)))
             temporary.unlink(missing_ok=True)
+            if self.output_sizes:
+                self.output_sizes.part(None, encoding=False)
             outputs.append(output)
             position = min(length, position + duration)
             if config.size_safe:
@@ -343,6 +362,7 @@ class Engine:
         if task_subfolders:
             directory.mkdir()
         stage_dir = Path(tempfile.mkdtemp(prefix=".zhendu-", dir=directory))
+        self.output_sizes = OutputSizes(stage_dir, extension)
         history = directory if task_subfolders else Path(history_root) if history_root else config_root() / "tasks"
         manifest = history / ("task.json" if task_subfolders else task_id + ".json")
         started = time.monotonic()
@@ -379,8 +399,10 @@ class Engine:
             except OSError as error:
                 # Completed videos remain successful even if history cannot be saved.
                 self.log(t("视频已保存，但无法写入任务记录：{error}", "Videos saved, but task history could not be written: {error}", error=error))
-            self.progress({"fraction": 1.0, "stage": t("完成", "Complete")})
-            return Result(str(directory), published, elapsed, info.size, sum(Path(path).stat().st_size for path in published), str(manifest))
+            final_sizes = {Path(path).name: Path(path).stat().st_size for path in published}
+            final_size = sum(final_sizes.values())
+            self.progress({"fraction": 1.0, "stage": t("完成", "Complete"), "output_size": final_size, "part_sizes": final_sizes})
+            return Result(str(directory), published, elapsed, info.size, final_size, str(manifest))
         except Exception as error:
             for path in published:
                 Path(path).unlink(missing_ok=True)
